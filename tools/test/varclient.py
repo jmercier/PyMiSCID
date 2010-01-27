@@ -1,0 +1,27 @@
+import codebench.log
+import logging.config
+logging.config.fileConfig("logging.conf")
+import pymiscid
+from twisted.internet import task
+
+i = 0
+
+def callback(var):
+    print var
+
+class obs(object):
+    def added(self, proxy):
+        proxy.addVariableObserver('bonjour', callback)
+        print "added"
+
+    def removed(self, proxy):
+        print "removed"
+
+def main():
+    sr = pymiscid.factory.createServiceRepository()
+    sr.addObserver(obs(), filter = pymiscid.NameIs("srv"))
+
+    pymiscid.run()
+
+if __name__ == '__main__':
+    main()

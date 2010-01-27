@@ -1,0 +1,18 @@
+[Desktop Entry]
+ Encoding=UTF-8
+ Name=OMiSCID Browser
+ ServiceTypes=Plasma/Applet
+ Type=Service
+ Icon=icon.png
+ X-Plasma-API=python
+ X-Plasma-MainScript=code/main.py
+ 
+ X-KDE-PluginInfo-Author=J-Pascal Mercier
+ X-KDE-PluginInfo-Email=jean-pascal.mercier@inrialpes.fr
+ X-KDE-PluginInfo-Name=omiscidbrowser
+ X-KDE-PluginInfo-Version=pre0.1
+ X-KDE-PluginInfo-Website=not
+ X-KDE-PluginInfo-Category=dnssd
+ X-KDE-PluginInfo-Depends=
+ X-KDE-PluginInfo-License=BSD
+ X-KDE-PluginInfo-EnabledByDefault=true
