@@ -619,7 +619,7 @@ class ServiceRepository():
         """
         filt = kw.pop('filter', None)
         clist = []
-        uid = id(obj)
+        uid = self.uid_gen.next()
         self.observers[uid] = (weakref.ref(obj), filt, clist, args)
         for peerid, proxy in copy.copy(self.proxys).iteritems():
             if (filt is None) or filt(proxy):
@@ -631,5 +631,5 @@ class ServiceRepository():
         """
         Removing an observer.
         """
-        del self.observers[id(obj)]
+        del self.observers[obj]
 
