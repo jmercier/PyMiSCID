@@ -19,7 +19,8 @@ class obs(object):
 
 def main():
     sr = pymiscid.factory.createServiceRepository()
-    sr.addObserver(obs(), filter = pymiscid.NameIs("srv"))
+    observer = obs()
+    sr.addObserver(observer, filter = pymiscid.NameIs("srv"))
 
     pymiscid.run()
 
