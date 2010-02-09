@@ -479,6 +479,18 @@ class StartedService(ServiceBase):
         """
         self.connectors[cname].send(msg, peerid = peerid)
 
+    def sendToAllClients(self, cname, msg):
+        """
+        OMiSCID API : send message to all connected clients.
+        """
+        self.connectors[cname].send(msg)
+
+    def sendToOneClient(self, cname, msg, peerid):
+        """
+        OMiSCID API : send message one particular client on a connector
+        """
+        self.connectors[cname].send(msg, peerid = peerid)
+
 
 
 class StoppedService(ServiceBase):
