@@ -138,13 +138,22 @@ class BonjourServiceDiscovery(BonjourObject, events.ThreadsafeEventDispatcher):
                         raproto, raddr, rport, rtxt, rflags):
         string_txt = avahi.txt_array_to_string_array(rtxt)
         kw = {}
-        rhost = re_mdns.split(rhost)[0]
+        rhost_prefix = re_mdns.split(rhost)[0]
         for i in string_txt:
             key, value = i.split('=',1)
             kw[key] = value
 
-        family, socktype, proto, canonname, (raddr, unknown) = socket.getaddrinfo(rhost, None, socket.AF_INET,
-                                                        socket.SOCK_RAW, socket.IPPROTO_IP, socket.AI_CANONNAME)[0]
+        try:
+            family, socktype, proto, canonname, (dns_raddr, unknown) = socket.getaddrinfo(rhost_prefix, None, socket.AF_INET,
+                                                            socket.SOCK_RAW, socket.IPPROTO_IP, socket.AI_CANONNAME)[0]
+            rhost = rhost_prefix
+            raddr = dns_raddr
+        except socket.gaierror:
+            if logger.isEnabledFor(logging.INFO):
+                logger.info("Cannot Resolve <%s> with dns using mdns instead ..." 
+                            % rhost_prefix)
+            
+
 
         if logger.isEnabledFor(logging.DEBUG):
             fname = kw["name"].strip("/c") if "name" in kw else "UNKNOWN"
