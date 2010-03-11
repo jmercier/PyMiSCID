@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 """
 This module is intended to describe the dispatcher for connector events
@@ -65,7 +64,7 @@ class ControlEventDispatcher(BasicEventDispatcher):
                 logger.warning("Answer Timeout :  qid %08.x, peer %s" % 
                                     (qid, peerid))
             answer = self.deferred_answers[peerid].pop(qid)
-            answer.errback(PeerError(peerid, 'Answer Timeout'))
+            answer.errback(PeerError(peerid, 'Answer Timout'))
 
     def addProxy(self, proxy):
         """
@@ -81,9 +80,9 @@ class ControlEventDispatcher(BasicEventDispatcher):
 
     def addWaitingAnswer(self, qid, peerid):
         """
-        This method is used to create the deferred object and add the it
+        This method is ussed to create the defered object and add the it
         to the waiting list. This method is normally called by the connector
-        when a query is made to create the right deferred and to return it to
+        when a query is made to create the right defered and to return it to
         the caller.
         """
         answer  = defer.Deferred()
@@ -212,7 +211,7 @@ class ControlEventDispatcher(BasicEventDispatcher):
     def received(self, msg):
         """
         This method is the main dispatcher for the types of query defined by the
-        root tag of the XML tree.
+        root tag of the xml tree.
         """
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("ctrl msg received <%d>: %s" % (msg.peerid, msg.data))

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2009 J-Pascal Mercier
 """
 This is
@@ -41,7 +40,6 @@ xml_tag_to_connector_type_map = { XML_IO_CONNECTOR_TAG : INOUTPUT,
 connector_type_to_xml_tag_map = { INOUTPUT : XML_IO_CONNECTOR_TAG,
                                   INPUT : XML_I_CONNECTOR_TAG , 
                                   OUTPUT : XML_O_CONNECTOR_TAG   }
-
 txt_to_connector_type_map = {'o' : OUTPUT,
                              'd' : INOUTPUT,
                              'i' : INPUT }
@@ -311,7 +309,7 @@ class Connector(BIPPrimalConnector, service.Service):
 
 class IConnector(Connector):
     """
-    This Class is intend to restrict the output possibilities of an Input only
+    This Class is intend to restric the output possibilities of an Input only
     connector.
     """
     txt_prefix = INPUT_CONNECTOR_PREFIX
@@ -367,17 +365,16 @@ class OConnector(Connector):
             return Connector.connect(self, proxy, timeout = timeout)
 
 
-
 class ControlConnector(Connector):
     """
-    This Class is the implementation of the control connector. It implement all
+    This Class is the implemenetation of the control connector. It implement all
     standard connector method plus it is designed to send event, answer and
     query
     """
     name = "control"
     def __init__(self):
         """
-        Initialization of the generator and the ControlDispatcher()
+        Initialisation of the generator and the ControlDispatcher()
         """
         self.qid_generator = codebench.generator.uid_generator()
         Connector.__init__(self)

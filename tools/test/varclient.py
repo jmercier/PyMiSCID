@@ -6,12 +6,12 @@ from twisted.internet import task
 
 i = 0
 
-def callback(var):
+def callback(var, text):
     print var
 
 class obs(object):
     def added(self, proxy):
-        proxy.addVariableObserver('bonjour', callback)
+        proxy.addVariableObserver('bonjour', callback, "bonjour")
         print "added"
 
     def removed(self, proxy):
