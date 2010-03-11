@@ -5,7 +5,7 @@ from PyKDE4.plasma import Plasma
 from PyKDE4 import plasmascript
 from PyKDE4.kdecore import i18n
 from PyKDE4.kdeui import *
-from pymiscid.bonjour.avahi_browser import BonjourServiceDiscovery, BonjourTypeDiscovery
+import pymiscid
 
 import time
 import weakref
@@ -185,7 +185,7 @@ class OMiSCIDBrowserPlasmoid(plasmascript.Applet):
       self.label = LabelWidget()
       self.layout.addItem(self.label)
       self.srs = {}
-      self.tds = BonjourTypeDiscovery("_bip")
+      self.tds = pymiscid.bonjour.BonjourTypeDiscovery("_bip")
       self.tds.addedEvent.addObserver(self.typeAdded)
       self.tds.removedEvent.addObserver(self.typeRemoved)
       self.tds.run()
@@ -212,7 +212,7 @@ class OMiSCIDBrowserPlasmoid(plasmascript.Applet):
         self.dwidgets[tname] = wid
         self.layout.addItem(wid)
 
-        sr = BonjourServiceDiscovery(tname)
+        sr = pymiscid.bonjour.BonjourServiceDiscovery(tname)
         id1 = sr.addedEvent.addObserver(self.srvAdded, tname)
         id2 = sr.removedEvent.addObserver(self.srvRemoved, tname)
 
