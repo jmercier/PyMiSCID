@@ -32,16 +32,21 @@ class ServiceFactory(object):
         This method create an OMiSCID Service with standard variables.
         """
         srv = self.service_type()
-        srv.addVariable("name", "string", "this is the service name", 
-                            variable.CONSTANT, name)
-        srv.addVariable("owner", "string", "this is the service owner", 
-                            variable.CONSTANT, os.environ['USER'])
+        srv.addVariable("name", "string", "this is the service name",
+                            access_type = variable.CONSTANT,
+                            value = name)
+        srv.addVariable("owner", "string", "this is the service owner",
+                            access_type = variable.CONSTANT,
+                            value = os.environ['USER'])
         srv.addVariable("class", "string", "this is the service class",
-                            variable.CONSTANT, srv.exposed_class_name)
+                            access_type = variable.CONSTANT,
+                            value = srv.exposed_class_name)
         srv.addVariable("lock", "string", "this is the service lock",
-                            variable.READ, "")
+                            access_type = variable.READ,
+                            value = "")
         srv.addVariable("peerId", "string", "servicePeerid",
-                            variable.CONSTANT, str(srv.peerid))
+                            access_type = variable.CONSTANT,
+                            value = str(srv.peerid))
 
         return srv
 

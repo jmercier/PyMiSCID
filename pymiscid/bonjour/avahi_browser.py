@@ -42,7 +42,7 @@ class BonjourObject(object):
                                                       avahi.DBUS_PATH_SERVER),
                             avahi.DBUS_INTERFACE_SERVER)
 
-class BonjourTypeDiscovery(BonjourObject, events.ThreadsafeEventDispatcher):
+class BonjourTypeDiscovery(BonjourObject, events.MutexedEventDispatcher):
     """
     This class represent the avahi type discovery. This is intended to browse
     asynchronously the environment type. Can also be given a filter for a
@@ -56,7 +56,7 @@ class BonjourTypeDiscovery(BonjourObject, events.ThreadsafeEventDispatcher):
         BonjourObject.__init__(self)
         events.EventDispatcherBase.__init__(self)
         self.filter = filt
-    
+
     def run(self):
         """
         Starts the discovery process.
@@ -84,7 +84,7 @@ class BonjourTypeDiscovery(BonjourObject, events.ThreadsafeEventDispatcher):
                         logger.info("%s domain removed : %s" % (self.filter, type))
                 self.removedEvent(type)
 
-class BonjourServiceDiscovery(BonjourObject, events.ThreadsafeEventDispatcher):
+class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
     """
     This object represent the main service discovery. It is meant to browse the
     know services and call the added, and removed method of the proxy_factory.
@@ -144,15 +144,17 @@ class BonjourServiceDiscovery(BonjourObject, events.ThreadsafeEventDispatcher):
             kw[key] = value
 
         try:
-            family, socktype, proto, canonname, (dns_raddr, unknown) = socket.getaddrinfo(rhost_prefix, None, socket.AF_INET,
-                                                            socket.SOCK_RAW, socket.IPPROTO_IP, socket.AI_CANONNAME)[0]
+            family, socktype, proto, canonname, (dns_raddr, unknown) = \
+                    socket.getaddrinfo( rhost_prefix, None, socket.AF_INET,
+                                        socket.SOCK_RAW, socket.IPPROTO_IP, 
+                                        socket.AI_CANONNAME)[0]
             rhost = rhost_prefix
             raddr = dns_raddr
         except socket.gaierror:
             if logger.isEnabledFor(logging.INFO):
                 logger.info("Cannot Resolve <%s> with dns using mdns instead ..." 
                             % rhost_prefix)
-            
+
 
 
         if logger.isEnabledFor(logging.DEBUG):
@@ -183,7 +185,8 @@ class BonjourServicePublisher(BonjourObject):
         if txt is None:
             txt = {}
         if logger.isEnabledFor(logging.INFO):
-            logger.info("Starting service on %d with description %s" % (port, str(txt)))
+            logger.info("Starting service on %d with description %s" % \
+                                                                (port, str(txt)))
         bus = dbus.SystemBus()
         grp = dbus.Interface(
                     bus.get_object(avahi.DBUS_NAME,

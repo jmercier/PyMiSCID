@@ -8,8 +8,8 @@ import weakref
 import copy
 
 import variable, connector
-import codebench.generator
-import codebench.xml
+import codebench.generator as generator
+import codebench.xml as xml
 
 from twisted.application import service
 from twisted.internet import threads, reactor
@@ -52,13 +52,13 @@ class ServiceCommon(object):
         """
         Add an observer for a variable. returns an id to remove the callback
         """
-        return self.variables[vname].addObserver(callback, *args)
+        return self.variables[vname].valueEvent.addObserver(callback, *args)
 
     def removeVariableObserver(self, vname, cid):
         """
         remove an observer from a variable callback
         """
-        self.variables[vname].removeObserver(cid)
+        self.variables[vname].valueEvent.removeObserver(cid)
 
     def __getattr__(self, name):
         if name in self.variables:
@@ -136,6 +136,9 @@ class ServiceBase(ServiceCommon):
         This method close a particular connection
         """
         self.connectors[cname].loseConnection(peerid = peerid)
+
+
+
 
 
 class ProxySupervisor(object):
@@ -254,6 +257,7 @@ class ServiceProxy(ServiceCommon):
         var.value = value
         self.variables[name] = var
         self.vsupervisors[name] = VariableSupervisor(name, self.supervisor)
+        var.valueProxyEvent.addObserver(self.__variable_proxy_changed__, name)
 
     def __add_connector__(self, name, con_type, tcp = None):
         """
@@ -379,7 +383,7 @@ class ServiceProxy(ServiceCommon):
                     self.__add_variable__(name)
                 else:
                     self.__add_connector__(name, child.tag)
-            codebench.xml.Marshall.update(ServiceCommon.__getattr__(self, name), child)
+            xml.Marshall.update(ServiceCommon.__getattr__(self, name), child)
 
     def getVariableValue(self, vname):
         """
@@ -401,13 +405,17 @@ class ServiceProxy(ServiceCommon):
                 res = element.find('value').text
         return res
 
+    def __variable_proxy_changed__(self, value, vname):
+            with self.supervisor:
+                    self.control.query(VARIABLE_EVENT_MSG % (vname, value), self.peerid)
+
     def setVariableValue(self, vname, value):
         """
         This method set the remote variable value if the variable is not
         constant
         """
-        with self.supervisor:
-            self.control.query(VARIABLE_EVENT_MSG % (vname, value), self.peerid)
+        self.variables[vname].valueProxy = value
+            #self.control.query(VARIABLE_EVENT_MSG % (vname, value), self.peerid)
 
     def getConnectedPeers(self, cname):
         """
@@ -455,8 +463,8 @@ class StartedService(ServiceBase):
         """
         Returns a string describing the service.
         """
-        vlist = [codebench.xml.Marshall.dumps(v) for v in self.variables.itervalues()]
-        clist = [codebench.xml.Marshall.dumps(c) for c in self.connectors.itervalues()]
+        vlist = [xml.Marshall.dumps(v) for v in self.variables.itervalues()]
+        clist = [xml.Marshall.dumps(c) for c in self.connectors.itervalues()]
         return ''.join(vlist) + ''.join(clist)
 
     def TXTRecord(self, record = None):
@@ -567,7 +575,7 @@ class ServiceRepository():
         """
         self.proxys = {}
         self.observers = {}
-        self.uid_gen = codebench.generator.uid_generator()
+        self.uid_gen = generator.uid_generator()
 
     def dispatchAdded(self, proxy, rtxt):
         """

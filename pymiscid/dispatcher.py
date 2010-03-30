@@ -2,11 +2,13 @@
 """
 This module is intended to describe the dispatcher for connector events
 """
-import logging
-import weakref
+import logging, \
+       weakref
 from twisted.internet import reactor, defer
-import codebench.events
-import codebench.xml
+
+import codebench.events as events
+import codebench.xml as xml
+
 from lxml import etree
 
 from cstes import QUERY_TIMEOUT, \
@@ -27,7 +29,7 @@ from bip.protocol import PeerError, Peerid
 logger = logging.getLogger(__name__)
 
 
-class BasicEventDispatcher(codebench.events.ThreadsafeEventDispatcher):
+class BasicEventDispatcher(events.MutexedEventDispatcher):
     """
     This object is the basic event dispatcher for the three standards connector
     events.
@@ -108,7 +110,7 @@ class ControlEventDispatcher(BasicEventDispatcher):
         while len(self.remote_observers[peerid]) != 0:
             vname, oid = self.remote_observers[peerid].popitem()
             var = self.service().variables[vname]
-            var.removeObserver(peerid)
+            var.valueEvent.removeObserver(peerid)
 
     def __dispatch_variable_query__(self, root, msg):
         """
@@ -117,15 +119,15 @@ class ControlEventDispatcher(BasicEventDispatcher):
         vname = root.attrib['name']
         var = self.service().variables[vname]
         if len(root.getchildren()) != 0:
-            codebench.xml.Marshall.update(var, root)
-        return codebench.xml.Marshall.dumps(var)
+            xml.Marshall.update(var, root)
+        return xml.Marshall.dumps(var)
 
     def __dispatch_connector_query__(self, root, msg):
         """
         """
         cname = root.attrib['name']
         con = self.service().connectors[cname]
-        return codebench.xml.Marshall.dumps(con)
+        return xml.Marshall.dumps(con)
 
     def __dispatch_subscribe_query__(self, root, msg):
         """
@@ -133,12 +135,12 @@ class ControlEventDispatcher(BasicEventDispatcher):
         vname = root.attrib['name']
         var = self.service().variables[vname]
         if vname not in self.remote_observers[msg.peerid]:
-            var.addObserver(self.variableChanged, var.name, msg.peerid, oid = msg.peerid)
+            var.valueEvent.addObserver(self.variableChanged, var.name, msg.peerid, oid = msg.peerid)
             self.remote_observers[msg.peerid][vname] =  msg.peerid
         else:
-            logger.warning("Multiple variable subscriptio [%s] to var - %s -" 
-                           % (str(msg.peerid), vname))
-        return codebench.xml.Marshall.dumps(var)
+            logger.warning("Multiple variable subscription [%s] to var - %s -"
+                                    % (str(msg.peerid), vname))
+        return xml.Marshall.dumps(var)
 
     def __dispatch_unsubscribe_query__(self, root, msg):
         """
@@ -191,7 +193,7 @@ class ControlEventDispatcher(BasicEventDispatcher):
         else:
             vname = real_event.attrib['name']
             proxy = self.proxys[msg.peerid]()
-            codebench.xml.Marshall.update(proxy.variables[vname], real_event)
+            xml.Marshall.update(proxy.variables[vname], real_event)
 
     def dispatchAnswer(self, root, msg):
         """

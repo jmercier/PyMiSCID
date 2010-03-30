@@ -13,7 +13,7 @@ from twisted.application import service
 
 from dispatcher import BasicEventDispatcher, ControlEventDispatcher
 
-import codebench.generator
+import codebench.generator as generator
 
 from cstes import XML_IO_CONNECTOR_TAG, \
                   XML_I_CONNECTOR_TAG, \
@@ -376,7 +376,7 @@ class ControlConnector(Connector):
         """
         Initialisation of the generator and the ControlDispatcher()
         """
-        self.qid_generator = codebench.generator.uid_generator()
+        self.qid_generator = generator.uid_generator()
         Connector.__init__(self)
         self.dispatcher = ControlEventDispatcher()
         self.dispatcher.control = weakref.ref(self)
