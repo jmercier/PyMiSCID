@@ -1,3 +1,4 @@
+#!/bin/sh
 DIR="pymiscid/codebench"
 FILES="events.py wref.py xml.py generator.py decorators.py"
 rm -rf ${DIR}
