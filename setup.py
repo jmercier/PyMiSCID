@@ -6,8 +6,6 @@ setup(
                 "pymiscid.bip", 
                 "pymiscid.bonjour",
                 "pymiscid.xsd",
-                "codebench",
-                "codebench.opencv",
-                "codebench.graphics"],
+                "pymiscid.codebench"],
     package_data = {"pymiscid.xsd" : ["*.xsd"]},
 )
