@@ -117,30 +117,22 @@ class FastLineReceiver(protocol.Protocol):
     __line_buffer = None
     __line_rlen = 0
 
-    def setLineMode(self, data):
+    def setLineMode(self):
         """
         This function set the receiver mode to line mode and process
         the data.
         """
         self.line_mode = True
-        if len(data) != 0:
-            self.dataReceived(data)
 
-    def setRawMode(self, data):
+    def setRawMode(self):
         """
         This function set the receiver mode to raw mode and process
         the data.
         """
         self.line_mode = False
-        if len(data) != 0:
-            self.rawDataReceived(data)
 
-    def dataReceived(self, data):
-        """
-        This function append data to a buffer if until we have at least
-        line_size and then call lineReceived. Then , it switches to 
-        RawDataMode.
-        """
+    def _dataReceived(self, data):
+        rest = ""
         if self.line_mode:
             if self.__line_rlen == 0:
                 self.__line_buffer = []
@@ -150,9 +142,21 @@ class FastLineReceiver(protocol.Protocol):
             self.__line_buffer.append(hdr)
             if self.__line_rlen == 0:
                 self.lineReceived(''.join(self.__line_buffer))
-                self.setRawMode(rest)
+                self.setRawMode()
         else:
-            self.rawDataReceived(data)
+            rest = self.rawDataReceived(data)
+        return rest
+
+
+
+    def dataReceived(self, data):
+        """
+        This function append data to a buffer if until we have at least
+        line_size and then call lineReceived. Then , it switches to 
+        RawDataMode.
+        """
+        while len(data) != 0:
+                data = self._dataReceived(data)
 
     def lineReceived(self, data):
         """
@@ -204,7 +208,8 @@ class BIPBaseProtocol(FastLineReceiver, events.EventDispatcherBase):
                 if (self.transport.bufferSize > (optimized_size * 2)) or (self.transport.bufferSize < (optimized_size / 2)):
                     self.transport.bufferSize = optimized_size
                 self.receivedEvent(self.__msg__)
-            self.setLineMode(rest)
+            self.setLineMode()
+        return rest
 
     def lineReceived(self, line):
         """
