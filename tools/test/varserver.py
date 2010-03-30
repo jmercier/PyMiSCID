@@ -8,7 +8,7 @@ i = 0
 
 def main():
     srv = pymiscid.factory.create('srv')
-    srv.addVariable("bonjour", "this is bonjour", pymiscid.READ_WRITE, value = 12)
+    srv.addVariable("bonjour", "Int:", "Int:", pymiscid.READ_WRITE, value = 12)
     srv.addConnector("conn1", "this is a connector", pymiscid.INOUTPUT)
     srv.start()
     def upd_var():

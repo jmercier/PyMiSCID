@@ -1,4 +1,4 @@
-import codebench.log
+import log
 import logging.config
 logging.config.fileConfig("logging.conf")
 import pymiscid

@@ -1,7 +1,7 @@
 #import codebench.twisted.internet.qt4reactor
 #codebench.twisted.internet.qt4reactor.install()
 
-import codebench.log
+import log
 import logging.config
 logging.config.fileConfig("logging.conf")
 import pymiscid
