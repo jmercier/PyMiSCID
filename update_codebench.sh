@@ -1,5 +1,5 @@
 DIR="pymiscid/codebench"
-FILES="events.py wref.py xml.py generator.py"
+FILES="events.py wref.py xml.py generator.py decorators.py"
 rm -rf ${DIR}
 mkdir ${DIR}
 for file in ${FILES}

@@ -124,8 +124,6 @@ class EventDispatcherBase(object):
                 evt = self.event_type(**kw)
                 setattr(self, evt_name + "Event", evt)
                 evt.name = evt_name
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Event created with <%s>" % repr(kw))
 
     def addObserver(self, obj, *args,  **kw):
         """
