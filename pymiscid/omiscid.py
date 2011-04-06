@@ -1,42 +1,68 @@
-#
-"""
-This is the standard OMiSCID api module. It install the twisted reactor
-(if not already installed) and defines the function to run the reactor.
-"""
-# Installing the main glibreactor for twisted
-try:
-    from twisted.internet import glib2reactor
-    glib2reactor.install()
-except ImportError, err:
-    pass
-except AssertionError, err:
-    pass
+import connector
+import rpc
+import bonjour.avahi_browser as bonjour
+import random
 
-from twisted.internet import reactor
+from codebench.decorators import singleton
 
-import thread
+class Service(object):
+    name = "Unknown"
 
-# Import some interesting omiscid type
-from connector import INPUT, OUTPUT, INOUTPUT
-from variable import CONSTANT, READ_WRITE, READ
-from filters import *
+    def __init__(self):
+        for attrname in dir(self.__class__):
+            attr = getattr(self.__class__, attrname)
+            if not isinstance(attr, type):
+                continue
+            if issubclass(attr, connector.ConnectorBase):
+                setattr(self, attrname, attr())
 
-# Importing and Creating the default ServiceFactory
-from factory import ServiceFactory
-factory = ServiceFactory()
+    def start(self):
+        self.connectors = {}
 
-def run(inthread = False):
-    """
-    This method starts the OMiSCID main loop.
-    """
-    if inthread:
-         thread.start_new_thread(reactor.run, (), {"installSignalHandlers" : False})
-    else:
-        reactor.run(installSignalHandlers = True)
+        self.publisher = bonjour.BonjourServicePublisher()
 
-def stop():
-    """
-    This method stop the OMiSCID main loop.
-    """
-    reactor.stop()
+        self.control = rpc.RPCConnector()
+
+
+        for attrname in dir(self):
+            attr = getattr(self, attrname)
+            if isinstance(attr, connector.ConnectorBase):
+                self.connectors[attrname] = attr
+        for c in self.connectors:
+            self.connectors[c].start()
+
+        self.publisher.publish(self.name, self.control.tcp, "_bip._tcp")
+
+    def stop(self):
+        for c in self.connectors:
+            self.connectors[c].close()
+        self.publisher.unpublish()
+        del self.publisher
+        del self.connectors
+
+if __name__ == '__main__':
+    @singleton
+    class S(Service):
+        name = 'euh'
+        c = connector.Connector
+
+    @singleton
+    class S1(Service):
+        name = "EUH2"
+        def __init__(self):
+            self.c = connector.Connector()
+
+    ser = S()
+    ser2 = S1()
+
+    ser.start()
+    ser2.start()
+
+    print ser.connectors['c'].tcp, ser2.connectors['c'].tcp
+
+    import reactor
+    reactor.Reactor().run()
+
+    ser.stop()
+    ser2.stop()
 
