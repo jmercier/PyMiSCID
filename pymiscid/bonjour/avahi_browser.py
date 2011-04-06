@@ -1,7 +1,14 @@
+#!/usr/bin/env python2
 #
+# (c) copyright 2010-2011 - Jean-Pascal Mercier <jp.mercier@gmail.com>
+# All rights reserved
+#
+#
+
 """
 This method implement the Avahi Service Discovery for OMiSCID
 """
+
 import logging
 import re
 import socket
@@ -57,7 +64,7 @@ class BonjourTypeDiscovery(BonjourObject, events.MutexedEventDispatcher):
         events.EventDispatcherBase.__init__(self)
         self.filter = filt
 
-    def run(self):
+    def start(self):
         """
         Starts the discovery process.
         """
@@ -72,17 +79,17 @@ class BonjourTypeDiscovery(BonjourObject, events.MutexedEventDispatcher):
         self.__sbiface__.connect_to_signal("ItemNew", self.__domain_added__)
         self.__sbiface__.connect_to_signal("ItemRemove", self.__domain_removed__)
 
-    def __domain_added__(self, a1, a2, type, domain, a5):
-            if (self.filter is None) or type.startswith(self.filter):
+    def __domain_added__(self, a1, a2, dtype, domain, a5):
+            if (self.filter is None) or dtype.startswith(self.filter):
                 if logger.isEnabledFor(logging.INFO):
-                        logger.info("%s domain discovered : %s" % (self.filter, type))
-                self.addedEvent(type)
+                        logger.info("%s domain discovered : %s" % (self.filter, dtype))
+                self.addedEvent(str(dtype))
 
-    def __domain_removed__(self, a1, a2, type, domain, a5):
-            if (self.filter is None) or type.startswith(self.filter):
+    def __domain_removed__(self, a1, a2, dtype, domain, a5):
+            if (self.filter is None) or dtype.startswith(self.filter):
                 if logger.isEnabledFor(logging.INFO):
-                        logger.info("%s domain removed : %s" % (self.filter, type))
-                self.removedEvent(type)
+                        logger.info("%s domain removed : %s" % (self.filter, dtype))
+                self.removedEvent(str(dtype))
 
 class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
     """
@@ -99,7 +106,7 @@ class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
         events.EventDispatcherBase.__init__(self)
         self.domain = domain
 
-    def run(self):
+    def start(self):
         """
         This method must be call to start the MDNS Service Discovery
         """
@@ -130,7 +137,7 @@ class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
                                            self.__service_removed__)
 
     def __resolve_error__(self, msg):
-        if logger.isEnabledFor(logging.WARNING): 
+        if logger.isEnabledFor(logging.WARNING):
             logger.warning("Avahi : %s " % (msg))
 
 
@@ -146,13 +153,13 @@ class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
         try:
             family, socktype, proto, canonname, (dns_raddr, unknown) = \
                     socket.getaddrinfo( rhost_prefix, None, socket.AF_INET,
-                                        socket.SOCK_RAW, socket.IPPROTO_IP, 
+                                        socket.SOCK_RAW, socket.IPPROTO_IP,
                                         socket.AI_CANONNAME)[0]
             rhost = rhost_prefix
             raddr = dns_raddr
         except socket.gaierror:
             if logger.isEnabledFor(logging.INFO):
-                logger.info("Cannot Resolve <%s> with dns using mdns instead ..." 
+                logger.info("Cannot Resolve <%s> with dns using mdns instead ..."
                             % rhost_prefix)
 
 
@@ -164,7 +171,7 @@ class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
 
         self.addedEvent(rname, rhost, raddr, rport, kw, rhost)
 
-    def __service_removed__(self, rinterface, rprotocol, rname, rtype, 
+    def __service_removed__(self, rinterface, rprotocol, rname, rtype,
                             rdomain, rflags):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Service removed[%s] : %s" % (self.domain, rname))
@@ -210,3 +217,20 @@ class BonjourServicePublisher(BonjourObject):
 
     def __del__(self):
         self.unpublish()
+
+if __name__ == '__main__':
+    import gobject
+
+    typedisc = BonjourTypeDiscovery("_bip")
+    typedisc.start()
+
+    def added(domain):
+        print "Added : ", domain
+    typedisc.addedEvent.addObserver(added)
+
+    def removed(domain):
+        print "Removed : ", domain
+    typedisc.removedEvent.addObserver(removed)
+
+    m = gobject.MainLoop()
+    m.run()
