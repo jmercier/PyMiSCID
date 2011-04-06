@@ -1,7 +1,0 @@
-Installation : 
-     -  Install PyMiSCID
-     -  Install Codebench
-     -  Add Pymiscid and Codebench to your PYTHONPATH variable
-     -  run the script create_and_install.sh
-     -  Add the widget your preferred desktop 
-
