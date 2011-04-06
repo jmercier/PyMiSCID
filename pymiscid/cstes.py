@@ -3,7 +3,6 @@
 This modules defines de principal constants used during OMiSCID runtime
 """
 import os
-import xsd
 import logging
 
 logger = logging.getLogger(__name__)
@@ -65,16 +64,10 @@ XML_VARIABLE_TYPE = 'variable'
 SERVICE_FULL_DESCRIPTION = '<fullDescription/>'
 
 
-#
-# XSD
-#a
-CONTROL_ANSWER_XSD = xsd.control_answer
-CONTROL_QUERY_XSD = xsd.control_query
-SERVICE_XSD = xsd.service
-
 
 # General
 #
+UNBOUNDED_PEERID = 0xFFFFFF00
 UNBOUNDED_SERVICE_NAME = "unbound service"
 UNBOUNDED_CONNECTOR_NAME = "unbound connector"
 UNBOUNDED_VARIABLE_NAME = "unbound variable"

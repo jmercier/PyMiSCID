@@ -9,7 +9,7 @@ import reactor
 
 from codebench import events
 
-from cste import UNBOUNDED_PEERID
+from cstes import UNBOUNDED_PEERID
 
 
 
