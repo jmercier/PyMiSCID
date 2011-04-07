@@ -46,7 +46,6 @@ class ConnectorBase(protocol.BIPFactory):
                 logger.warning("Trying to send msg through an Input Only Connector")
             raise RuntimeError("Sending msg through an Input Only Connector")
 
-
         if peerid is None:
             map(lambda proto: proto.send(msg, self.peerid), self.peers.itervalues())
         else:
@@ -77,7 +76,6 @@ class ConnectorBase(protocol.BIPFactory):
             if logger.isEnabledFor(logging.WARNING):
                 logger.warning("Trying to send msg through an Input Only Connector")
             raise RuntimeError("Sending msg through an Input Only Connector")
-
 
     def TXTRecord(self, record = None):
         """
@@ -144,4 +142,5 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
         ConnectorBase.received(self, proto, peerid, msgid, msg)
         if len(msg) != 0:
             self.receivedEvent(msg)
+
 
