@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import threading
 
 class TimeoutError(Exception): pass
@@ -34,13 +36,13 @@ class ProxyObject(object):
         connector.dispatcher.addObserver(self)
 
     def connected(self, *args):
-        print args
+        print(args)
 
     def disconnected(self, *args):
-        print args
+        print(args)
 
     def received(self, *args):
-        print args
+        print(args)
 
 
     def call(self, method, *args):

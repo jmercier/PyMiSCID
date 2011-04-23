@@ -1,16 +1,18 @@
+from __future__ import print_function
+
 import codebench.log as log
 import logging.config
 logging.config.fileConfig("logging.conf")
 
 class TestListener(object):
     def received(self, *args):
-        print "RECEIVED", len(args[0])
+        print ("RECEIVED", len(args[0]))
 
     def connected(self, *args):
-        print "CONNECTED", args
+        print ("CONNECTED", args)
 
     def disconnected(self, *args):
-        print "DISCONNECTED", args
+        print ("DISCONNECTED", args)
 
 if __name__ == '__main__':
     import socket
@@ -32,7 +34,7 @@ if __name__ == '__main__':
     f.bind(o)
 
     f.start()
-    print f.tcp, f.udp
+    print (f.tcp, f.udp)
 
     import reactor
     reactor.Reactor().run()

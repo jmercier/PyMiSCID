@@ -17,7 +17,7 @@ LINE_ENDING = "\r\n"
 BIP_HEADER_TEMPLATE = "%s %s %.8x %.8x" + LINE_ENDING
 BIP_GREETING_TIMEOUT = 1  # in seconds
 
-class PeerID(long):
+class PeerID(int):
     """
     This class represent a peerid. Internally it is just a long int which with
     the method str always givin the hexadecimal value at the right length that
@@ -29,7 +29,7 @@ class PeerID(long):
             val = random.randint(0, 0xFFFFFFFF) & 0xFFFFFFFF00
         elif isinstance(val, str):
             val = long(val, 16)
-        return long.__new__(cls, val)
+        return int.__new__(cls, val)
 
     def __str__(self):
         return "%08.x" % self
@@ -125,13 +125,13 @@ class BIPProtocol(threading.Thread):
                     logger.debug("Message Received [id : %s] [content : %s]" % \
                                     (str(peerid), str(self.__msg_buffer__[:size])))
                 self.factory().received(self, peerid, msgid, str(self.__msg_buffer__[:size]))
-            except socket.timeout as e:
+            except (socket.timeout, e):
                 pass
-            except socket.error:
+            except (socket.error, e):
                 break
-            except RuntimeError, e:
+            except (RuntimeError, e):
                 break
-            except Exception, e:
+            except (Exception, e):
                 import traceback
                 traceback.print_exc()
 

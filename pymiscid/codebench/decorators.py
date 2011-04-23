@@ -2,14 +2,14 @@
 #
 #
 # vim: ts=4 sw=4 sts=0 noexpandtab:
+from __future__ import print_function
+
 import logging
 import traceback
-import new
 import os
 import time
 
 from functools import wraps
-from itertools import izip
 
 import numpy
 
@@ -31,7 +31,7 @@ class buggy(object):
 			try:
 				return_value = fct(*args, **kwargs)
 			except Exception:
-				print "%s Crashed : Didn't i told you it was buggy ?" % (fct.__name__)
+				print ("%s Crashed : Didn't i told you it was buggy ?" % (fct.__name__))
 				raise
 			return return_value
 		return wrapper
@@ -112,7 +112,7 @@ class memoizehd(object):
 		except:
 			os.mkdir(basepath)
 		self.basepath = basepath
-		print self.basepath
+		print (self.basepath)
 	
 	def __call__(self, fct):
 		cachebase = os.path.join(self.basepath, str(hash(fct)) + "_" + str(os.getpid()))

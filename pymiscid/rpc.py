@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import json
 import codebench.wref as wref
 import weakref
@@ -136,7 +138,7 @@ class RPCConnector(connector.Connector):
                 del self.__rcallables__[method]
             else:
                 resultdict['result'] = self.__rcallables__[method]()(*params)
-        except Exception, e:
+        except (Exception, e):
             resultdict['error'] = [e.__class__.__name__, str(e)]
             #import traceback
             #traceback.print_exc()
@@ -257,7 +259,7 @@ class VariableManager(object):
 class test(object):
     @remote_callable
     def method1(self, *args):
-        print args
+        print (args)
 
 class ObjectProxy(object):
     def bind(self, connector):
@@ -265,13 +267,13 @@ class ObjectProxy(object):
         self.__remote_callable__ = {}
 
     def connected(self, *args):
-        print "Connected"
+        print ("Connected")
 
     def disconnected(self, *args):
-        print "DisConnected"
+        print ("DisConnected")
 
     def received(self, *args):
-        print "euh"
+        print ("euh")
 
     def call(self, method, *args):
         self.connector.send(method, *args, id = 1)
@@ -284,7 +286,7 @@ if __name__ == '__main__':
     vm.__local_variables__['test'] = v
     c.bind(vm)
     c.start()
-    print c.tcp
+    print (c.tcp)
     import reactor
     reactor.Reactor().run()
     c.close()

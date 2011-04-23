@@ -9,8 +9,7 @@ import reactor
 
 from codebench import events
 
-from cstes import UNBOUNDED_PEERID
-
+from standard import UNBOUNDED_PEERID
 
 
 class ConnectorBase(protocol.BIPFactory):
@@ -21,7 +20,7 @@ class ConnectorBase(protocol.BIPFactory):
 
     input = output = True
 
-    descriptor = 'c'
+    __tcp__ = None
 
     def __init__(self, peerid = None):
         """
@@ -65,9 +64,18 @@ class ConnectorBase(protocol.BIPFactory):
         else:
             self.peers[peerid].stop()
 
-    def connect(self, addr, port, token = False):
+        self.__tcp__ = None
+
+    def connect(self, *args):
         """
         """
+        if len(args) == 1:
+            # PROXY
+            pass
+
+        if len(args) == 2:
+            addr, port = args
+
         reactor.Reactor().connectTCP(addr, port, self)
         return True
 
@@ -79,26 +87,23 @@ class ConnectorBase(protocol.BIPFactory):
                 logger.warning("Trying to send msg through an Input Only Connector")
             raise RuntimeError("Sending msg through an Input Only Connector")
 
-    def TXTRecord(self, record = None):
-        """
-        This method describe the connector as a txt record (python dict) for dnssd.
-        """
-        if record is None:
-            record = {}
-        if self.running == 0:
-            raise RuntimeError("Cannot get txt record of an stopped connector")
-        record[self.name] = \
-                        ''.join([self.txt_prefix, TXT_SEPARATOR, str(self.tcp)])
-        return record
-
     def start(self, tcpport = 0, udpport = 0):
         stcp = reactor.Reactor().listenTCP(tcpport, self)
-        addr, self.tcp = stcp.getsockname()
+        addr, self.__tcp__ = stcp.getsockname()
 
         self.udp = None
 
         #sudp = reactor.listenUDP(0, self)
         #addr, self.udp = sudp.getsockname()
+
+
+    def __get_tcp_port__(self):
+        if self.__tcp__ is None:
+            self.start()
+        return self.__tcp__
+
+    tcp = property(__get_tcp_port__)
+
 
 
 class Connector(ConnectorBase, events.EventDispatcherBase):
@@ -109,6 +114,7 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
             protocol.peerid_generator_factory(protocol.PeerID(UNBOUNDED_PEERID).base())
 
     events = ['connected', 'disconnected', 'received']
+
 
     def __init__(self, *args, **kw):
         ConnectorBase.__init__(self, *args, **kw)
@@ -144,5 +150,13 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
         ConnectorBase.received(self, proto, peerid, msgid, msg)
         if len(msg) != 0:
             self.receivedEvent(msg)
+
+
+class IConnector(Connector):
+    output = False
+
+class OConnector(Connector):
+    output = False
+
 
 
