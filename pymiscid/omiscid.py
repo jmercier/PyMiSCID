@@ -12,7 +12,9 @@ from standard import UNBOUNDED_PEERID, \
                      TXT_SEPARATOR, \
                      OUTPUT_CONNECTOR_PREFIX, \
                      INPUT_CONNECTOR_PREFIX, \
-                     IO_CONNECTOR_PREFIX
+                     IO_CONNECTOR_PREFIX, \
+                     DESCRIPTION_VARIABLE_NAME, \
+                     FULL_DESCRIPTION_VALUE
 
 connector.Connector.txt_description = IO_CONNECTOR_PREFIX
 connector.IConnector.txt_description = INPUT_CONNECTOR_PREFIX
@@ -34,6 +36,8 @@ class ConnectorMixin(object):
 connector.Connector.__bases__ += (ConnectorMixin,)
 
 class Service(object):
+    publisher = None
+
     def __init__(self):
         for attrname in dir(self.__class__):
             attr = getattr(self.__class__, attrname)
@@ -45,11 +49,14 @@ class Service(object):
         self.consts = {"name" : "Unknown"}
 
     def start(self):
-        record = {}
+        # We always fully describe our service through txt record
+        if self.publisher is not None:
+            return False
+
+        record = {DESCRIPTION_VARIABLE_NAME : FULL_DESCRIPTION_VALUE}
+
         self.connectors = {}
-
         self.publisher = bonjour.BonjourServicePublisher()
-
         self.control = rpc.RPCConnector()
 
         for attrname in dir(self):
@@ -64,12 +71,20 @@ class Service(object):
 
         self.publisher.publish(self.name, self.control.tcp, "_bip._tcp", txt = record)
 
+        return True
+
     def stop(self):
+        if self.publisher is None:
+            return False;
+
         for c in self.connectors:
             self.connectors[c].close()
         self.publisher.unpublish()
-        del self.publisher
+
+        self.publisher = None
         del self.connectors
+
+        return True
 
 if __name__ == '__main__':
     @singleton

@@ -4,11 +4,6 @@ import time
 import signal
 import gobject
 
-try:
-    from ..codebench import events
-except Exception, err:
-    from codebench import events
-
 import logging
 logger = logging.getLogger(__name__)
 
