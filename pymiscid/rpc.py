@@ -75,14 +75,19 @@ class StructuredConnector(connector.Connector):
         :param msg: The string message
 
         """
-        protocol.BIPFactory.received(self, proto, peerid, msgid, msg)
-        self.receivedEvent(msg)
+        connector.ConnectorBase.received(self, proto, peerid, msgid, msg)
+        if len(msg) == 0:
+            return
+
+        jsondict = json.loads(msg)
+        self.receivedEvent(jsondict)
 
 
-class RPCConnector(connector.ConnectorBase):
+class RPCConnector(connector.Connector):
     __rpcid__ = id_generator()
-    def __init__(self, peerid = None):
-        connector.ConnectorBase.__init__(self, peerid = peerid)
+    events = ['connected', 'disconnected']
+    def __init__(self, *args, **kw):
+        connector.Connector.__init__(self, *args, **kw)
 
         self.__rcallables__ = {}
         self.__bounded__ = []
@@ -121,6 +126,7 @@ class RPCConnector(connector.ConnectorBase):
                 self.register(name, attr)
 
         self.__bounded__.append(obj)
+        self.addObserver(obj)
 
     def __process_rpc__(self, method, params, cid, peerid):
         resultdict = {"error" : None, "result" : None, "id" : cid}
@@ -227,6 +233,25 @@ class VariableConnector(RPCConnector):
 
 
 
+class VariableManager(object):
+    def __init__(self):
+        self.__local_variables__ = {}
+
+    @remote_callable
+    def set_variable_value(self, variable, value):
+        var = self.__local_variables__[variable]
+        var.value = value
+        return var.value
+
+    @remote_callable
+    def get_variable_value(self, variable):
+        return self.__local_variables__[variable].value
+
+    @remote_callable
+    def get_variable_list(self):
+        return self.__local_variables__.keys()
+
+
 
 
 class test(object):
@@ -253,13 +278,15 @@ class ObjectProxy(object):
 
 if __name__ == '__main__':
     import variable
-    vc = VariableConnector()
-    v = variable.Variable(vc, 2)
-    vc.__local_variables__['test'] = v
-    vc.start()
-    print vc.tcp
+    c = RPCConnector()
+    vm = VariableManager()
+    v = variable.Variable(c, 2)
+    vm.__local_variables__['test'] = v
+    c.bind(vm)
+    c.start()
+    print c.tcp
     import reactor
     reactor.Reactor().run()
-    vc.close()
+    c.close()
 
 

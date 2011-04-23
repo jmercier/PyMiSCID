@@ -21,6 +21,8 @@ class ConnectorBase(protocol.BIPFactory):
 
     input = output = True
 
+    descriptor = 'c'
+
     def __init__(self, peerid = None):
         """
         :param peerid: The peerid of the given connector
