@@ -17,6 +17,13 @@ LINE_ENDING = "\r\n"
 BIP_HEADER_TEMPLATE = "%s %s %.8x %.8x" + LINE_ENDING
 BIP_GREETING_TIMEOUT = 1  # in seconds
 
+def PeerIDIterator(base = None):
+    peerid = PeerID() if base is None else base
+    for i in xrange(0xFF):
+        yield peerid
+        peerid += 1
+
+
 class PeerID(int):
     """
     This class represent a peerid. Internally it is just a long int which with
@@ -26,7 +33,7 @@ class PeerID(int):
     __slots__ = []
     def __new__(cls, val = None):
         if val is None:
-            val = random.randint(0, 0xFFFFFFFF) & 0xFFFFFFFF00
+            val = random.randint(0, 0xFFFFFFFF) & 0xFFFFFF00
         elif isinstance(val, str):
             val = long(val, 16)
         return int.__new__(cls, val)
@@ -50,14 +57,6 @@ class PeerID(int):
         return self
     id = property(__getid__)
 
-def peerid_generator_factory(base = None):
-    """
-    A small generator which generate peerids for a service.
-    """
-    pid = PeerID(base)
-    for i in xrange(256):
-        yield pid
-        pid += 1
 
 
 class PeerError(Exception):
@@ -203,9 +202,9 @@ class BIPProtocol(threading.Thread):
 class BIPFactory(object):
     timeout = 5.0
     protocol = BIPProtocol
+    peerid = PeerID(0)
 
-    def __init__(self, peerid):
-        self.peerid = PeerID(peerid)
+    def __init__(self):
         self.peers = {}
 
     def build(self, sock, addr):

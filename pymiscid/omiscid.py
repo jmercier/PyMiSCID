@@ -14,7 +14,8 @@ from standard import UNBOUNDED_PEERID, \
                      INPUT_CONNECTOR_PREFIX, \
                      IO_CONNECTOR_PREFIX, \
                      DESCRIPTION_VARIABLE_NAME, \
-                     FULL_DESCRIPTION_VALUE
+                     FULL_DESCRIPTION_VALUE, \
+                     PART_DESCRIPTION_VALUE
 
 connector.Connector.txt_description = IO_CONNECTOR_PREFIX
 connector.IConnector.txt_description = INPUT_CONNECTOR_PREFIX
@@ -36,7 +37,10 @@ class ConnectorMixin(object):
 connector.Connector.__bases__ += (ConnectorMixin,)
 
 class Service(object):
+    """
+    """
     publisher = None
+    name = "UnNamed"
 
     def __init__(self):
         for attrname in dir(self.__class__):
@@ -46,34 +50,53 @@ class Service(object):
             if issubclass(attr, connector.ConnectorBase):
                 setattr(self, attrname, attr())
 
-        self.consts = {"name" : "Unknown"}
+        self.consts = {"name" : self.name}
+
 
     def start(self):
-        # We always fully describe our service through txt record
+        """
+        """
         if self.publisher is not None:
             return False
 
-        record = {DESCRIPTION_VARIABLE_NAME : FULL_DESCRIPTION_VALUE}
+        # We never fully describe our service through txt record
+        record = { DESCRIPTION_VARIABLE_NAME : PART_DESCRIPTION_VALUE }
 
         self.connectors = {}
         self.publisher = bonjour.BonjourServicePublisher()
-        self.control = rpc.RPCConnector()
 
+
+
+        # Populating Connector Attribute
         for attrname in dir(self):
             attr = getattr(self, attrname)
             if isinstance(attr, connector.ConnectorBase):
                 self.connectors[attrname] = attr
-        for c in self.connectors:
-            self.connectors[c].name = c
-            self.connectors[c].start()
-            self.connectors[c].TXTRecord(record = record)
+
+
+        peerid_gen = connector.protocol.PeerIDIterator()
+
+        self.control = rpc.RPCConnector()
+        self.control.name = self.name
+        self.control.peerid = peerid_gen.next()
+
+        for cname, peerid in zip(self.connectors, peerid_gen):
+            c = self.connectors[cname]
+            c.name = cname
+            c.peerid = peerid
+            c.start()
+            c.TXTRecord(record = record)
+
         print(record)
 
         self.publisher.publish(self.name, self.control.tcp, "_bip._tcp", txt = record)
 
         return True
 
+
     def stop(self):
+        """
+        """
         if self.publisher is None:
             return False;
 
@@ -86,16 +109,19 @@ class Service(object):
 
         return True
 
+    def __del__(self):
+        self.stop()
+
+
 if __name__ == '__main__':
-    @singleton
     class S(Service):
         name = 'euh'
         c = connector.Connector
 
-    @singleton
     class S1(Service):
         name = "EUH2"
         def __init__(self):
+            Service.__init__(self)
             self.c = connector.Connector()
 
     ser = S()

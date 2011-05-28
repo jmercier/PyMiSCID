@@ -18,9 +18,11 @@ import avahi
 
 try:
     from ..codebench import events
+    from ..codebench.decorators import singleton
 except Exception, err:
     print err
     from codebench import events
+    from codebench.decorators import singleton
 
 from dbus.mainloop.glib import DBusGMainLoop
 
@@ -49,13 +51,15 @@ class BonjourObject(object):
                                                       avahi.DBUS_PATH_SERVER),
                             avahi.DBUS_INTERFACE_SERVER)
 
-class BonjourTypeDiscovery(BonjourObject, events.MutexedEventDispatcher):
+@singleton
+class BonjourTypeDiscovery(BonjourObject, events.EventDispatcherBase):
     """
     This class represent the avahi type discovery. This is intended to browse
     asynchronously the environment type. Can also be given a filter for a
     particular kind of subtype domain.
     """
     events = ['added', 'removed']
+    started = False
     def __init__(self, filt = None):
         """
         Can take a filter
@@ -64,10 +68,15 @@ class BonjourTypeDiscovery(BonjourObject, events.MutexedEventDispatcher):
         events.EventDispatcherBase.__init__(self)
         self.filter = filt
 
+
+
     def start(self):
         """
         Starts the discovery process.
         """
+        if self.started:
+            return
+
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Starting OMiSCID Domain Discovery ...")
         dom = 'local'
@@ -78,6 +87,7 @@ class BonjourTypeDiscovery(BonjourObject, events.MutexedEventDispatcher):
         self.__sbiface__ = dbus.Interface(dbrowser, avahi.DBUS_INTERFACE_SERVICE_TYPE_BROWSER)
         self.__sbiface__.connect_to_signal("ItemNew", self.__domain_added__)
         self.__sbiface__.connect_to_signal("ItemRemove", self.__domain_removed__)
+        self.started = True
 
     def __domain_added__(self, a1, a2, dtype, domain, a5):
             if (self.filter is None) or dtype.startswith(self.filter):
@@ -91,12 +101,14 @@ class BonjourTypeDiscovery(BonjourObject, events.MutexedEventDispatcher):
                         logger.info("%s domain removed : %s" % (self.filter, dtype))
                 self.removedEvent(str(dtype))
 
-class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
+@singleton
+class BonjourServiceDiscovery(BonjourObject, events.EventDispatcherBase):
     """
     This object represent the main service discovery. It is meant to browse the
     know services and call the added, and removed method of the proxy_factory.
     """
     events = ['added', 'removed']
+    started = False
 
     def __init__(self, domain):
         """
@@ -106,13 +118,17 @@ class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
         events.EventDispatcherBase.__init__(self)
         self.domain = domain
 
+
     def start(self):
         """
         This method must be call to start the MDNS Service Discovery
         """
+        if self.started:
+            return
+
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Starting Service Discovery at : %s" % (self.domain))
-        dom = 'local' 
+            logger.debug("Starting Service Discovery on : %s" % (self.domain))
+        dom = 'local'
         flg = dbus.UInt32(0)
 
         sbrowser = self.__sbus__.get_object(avahi.DBUS_NAME, \
@@ -121,6 +137,8 @@ class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
 
         self.__sbiface__ =  dbus.Interface(sbrowser, \
                             avahi.DBUS_INTERFACE_SERVICE_BROWSER)
+
+        self.started = True
 
         def service_added(interface, protocol, name, typ, domain, flags):
             """
@@ -133,8 +151,10 @@ class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
                             error_handler=self.__resolve_error__)
 
         self.__sbiface__.connect_to_signal("ItemNew", service_added)
-        self.__sbiface__.connect_to_signal("ItemRemove", 
+        self.__sbiface__.connect_to_signal("ItemRemove",
                                            self.__service_removed__)
+
+        return self
 
     def __resolve_error__(self, msg):
         if logger.isEnabledFor(logging.WARNING):
@@ -166,8 +186,8 @@ class BonjourServiceDiscovery(BonjourObject, events.MutexedEventDispatcher):
 
         if logger.isEnabledFor(logging.DEBUG):
             fname = kw["name"].strip("/c") if "name" in kw else "UNKNOWN"
-            logger.debug("%s relolved[%s] : %s on %s - %s (%s)" 
-                        % (fname, self.domain, rname, raddr, rhost, rport))
+            logger.debug("%s resolved [%s] : %s on %s - %s (%s) %s"
+                        % (fname, self.domain, rname, raddr, rhost, rport, str(kw)))
 
         self.addedEvent(rname, rhost, raddr, rport, kw, rhost)
 

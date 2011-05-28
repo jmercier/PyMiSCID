@@ -15,19 +15,16 @@ from standard import UNBOUNDED_PEERID
 class ConnectorBase(protocol.BIPFactory):
     """
     """
-    __pid_generator__ = \
-            protocol.peerid_generator_factory(protocol.PeerID(UNBOUNDED_PEERID).base())
 
     input = output = True
 
     __tcp__ = None
 
-    def __init__(self, peerid = None):
+    def __init__(self):
         """
         :param peerid: The peerid of the given connector
         """
-        peerid = self.__pid_generator__.next() if peerid is None else peerid
-        protocol.BIPFactory.__init__(self, peerid)
+        protocol.BIPFactory.__init__(self)
 
     def __hash__(self):
         """
@@ -87,7 +84,8 @@ class ConnectorBase(protocol.BIPFactory):
                 logger.warning("Trying to send msg through an Input Only Connector")
             raise RuntimeError("Sending msg through an Input Only Connector")
 
-    def start(self, tcpport = 0, udpport = 0):
+    def start(self, tcpport = 0, udpport = 0, peerid = None):
+        self.peerid = protocol.PeerID() if peerid is None else peerid
         stcp = reactor.Reactor().listenTCP(tcpport, self)
         addr, self.__tcp__ = stcp.getsockname()
 
@@ -110,9 +108,6 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
     """
     Connector + Simple RAW Event dispatcher for object callback.
     """
-    __pid_generator__ = \
-            protocol.peerid_generator_factory(protocol.PeerID(UNBOUNDED_PEERID).base())
-
     events = ['connected', 'disconnected', 'received']
 
 

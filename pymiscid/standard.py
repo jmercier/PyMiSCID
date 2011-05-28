@@ -19,7 +19,6 @@ if not OMISCID_DOMAIN.startswith("_bip"):
         logger.warning("OMiSCID Domain must begin with a _bip")
     OMISCID_DOMAIN = "_bip._tcp"
 
-
 #
 # TXT Record
 #
@@ -36,9 +35,8 @@ READ_VARIABLE_PREFIX        = 'r'
 
 DESCRIPTION_VARIABLE_NAME   = 'desc'
 FULL_DESCRIPTION_VALUE      = 'full'
+PART_DESCRIPTION_VALUE      = 'part'
 PREFIX_LEN = 2
-
-
 
 #
 # General
