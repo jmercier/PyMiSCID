@@ -19,43 +19,78 @@ def id_generator(init = 0):
         yield init
         init += 1
 
+class MethodCallback(object):
+    def __init__(self, fct, *args):
+        self.fct    = fct
+        self.args   = args
 
-class DeferredResult(events.Event):
-    def __init__(self, rid, connector):
-        events.Event.__init__(self)
+    def __call__(self, *args):
+        self.fct(*(args + self.args))
 
-        self.__recv_evt__ = threading.Event()
-        self.__results__ = []
-        self.rid = rid
-        self.wconnector = weakref.ref(connector)
+
+class DeferredCallback(object):
+    def __init__(self, rid, connector, callback, args):
+        self.rid            = rid
+        self.wconnector     = weakref.ref(connector)
+        self.callback       = callback
+        self.args           = args
 
     def __set_result__(self, result):
-        self(result)
-
-        self.__results__.append(result)
-        self.__recv_evt__.set()
-        self.__recv_evt__ = threading.Event()
-
-    def addObserver(self, observer, *args, **kw):
-        events.Event.addObserver(self, observer, *args, **kw)
-        for r in self.__results__:
-            self(r)
-
+        self.callback(result, *self.args)
 
     result = property(fset = __set_result__)
 
+    def __del__(self):
+        connector = self.wconnector()
+        if connector is None:
+            return
+
+        if self.rid in connector.__pending_results__:
+            del connector.__pending_results__[self.rid]
+
+
+class DeferredResult(object):
+    def __init__(self, rid, connector, callback = None):
+
+        self.__lock         = threading.Lock()
+        self.__recv_evt     = []
+        self.__results      = []
+        self.rid            = rid
+        self.wconnector     = weakref.ref(connector)
+        self.callback       = callback
+
+    def __set_result__(self, result):
+        with self.__lock:
+            self.__results.append(result)
+            if len(self.__recv_evt) > 0:
+                evt = self.__recv_evt.pop()
+                evt.set()
+
+    def addObserver(self, observer, *args, **kw):
+        for r in self.__results:
+            self(r)
+
+    result = property(fset = __set_result__)
 
     def wait(self, timeout = 10):
-        if len(self.__results__) < 1:
-            if not self.__recv_evt__.wait(timeout = timeout):
-                raise TimeoutError("Deferred Result Timeout Reached")
+        self.__lock.acquire()
+        if len(self.__results) < 1:
+            evt = threading.Event()
 
-        res = self.__results__.pop()
+            self.__recv_evt.append(evt)
+            self.__lock.release()
+
+            if not evt.wait(timeout = timeout):
+                raise TimeoutError("Deferred Result Timeout Reached")
+            self.__lock.acquire()
+
+        res = self.__results.pop()
         if isinstance(res, Exception):
+            self.__lock.release()
             raise res
+        self.__lock.release()
 
         return res
-
 
     def __del__(self):
         connector = self.wconnector()
@@ -86,8 +121,9 @@ class StructuredConnector(connector.Connector):
 
 
 class RPCConnector(connector.Connector):
-    __rpcid__ = id_generator()
-    events = ['connected', 'disconnected']
+    events          = ['connected', 'disconnected']
+    structure       = "JSON RPC"
+    __rpcid__       = id_generator()
     def __init__(self, *args, **kw):
         connector.Connector.__init__(self, *args, **kw)
 
@@ -96,6 +132,8 @@ class RPCConnector(connector.Connector):
         self.__pending_results__ = {}
 
         self.register("listing", self.__listing__)
+
+
 
     def register(self, name, method):
         self.__rcallables__[name] = wref.WeakBoundMethod(method)
@@ -138,10 +176,8 @@ class RPCConnector(connector.Connector):
                 del self.__rcallables__[method]
             else:
                 resultdict['result'] = self.__rcallables__[method]()(*params)
-        except (Exception, e):
+        except Exception as e:
             resultdict['error'] = [e.__class__.__name__, str(e)]
-            #import traceback
-            #traceback.print_exc()
 
         if cid != None:
             connector.ConnectorBase.send(self, json.dumps(resultdict), peerid = peerid)
@@ -166,23 +202,34 @@ class RPCConnector(connector.Connector):
             # Should log something
             pass
 
-    def send(self, method, *args, **kw):
+    def send(self, method, args = (), peerid = None):
         """
         :param id: message id
         """
-        rneeded = kw.pop("result", False)
-        rpcid = self.__rpcid__.next() if rneeded else None
         msg = json.dumps({"method" : method,
                            "params" : args,
-                           "id" : rpcid})
+                           "id" : None})
 
-        result = None
-        if rpcid is not None:
-            result = DeferredResult(rpcid, self)
-            self.__pending_results__[rpcid] = weakref.ref(result)
-        connector.ConnectorBase.send(self, msg)
+        connector.ConnectorBase.send(self, msg, peerid = peerid)
+
+
+    def call(self, method, args = (), peerid = None, callback = None):
+        """
+        :param id: message id
+        """
+        rpcid       = self.__rpcid__.next()
+        msg         = json.dumps({"method" : method,
+                                  "params" : args,
+                                  "id" : rpcid})
+
+        result = DeferredCallback(rpcid, self, callback, ())
+
+        self.__pending_results__[rpcid] = weakref.ref(result)
+        connector.ConnectorBase.send(self, msg, peerid = peerid)
 
         return result
+
+
 
 def remote_callable(fct):
     setattr(fct, "__remote_callable__", True)

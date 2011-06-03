@@ -3,33 +3,50 @@
 #
 #
 import weakref
+import copy
 
 import bip.protocol as protocol
 import reactor
 
 from codebench import events
 
-from standard import UNBOUNDED_PEERID
+import logging
+logger = logging.getLogger(__name__)
+
 
 
 class ConnectorBase(protocol.BIPFactory):
     """
     """
 
+
     input = output = True
 
-    __tcp__ = None
+    __tcp       = None
+    description = "It's a trap"
+    structure   = "raw"
 
-    def __init__(self):
+    def __get_peerid(self):
+        return self.__peerid
+
+    def __set_peerid(self, peerid):
+        if len(self.peers) != 0:
+            raise AttributeError("Peer ID is read-only when active connection exists")
+
+        self.__peerid = peerid
+
+    def __init__(self, peerid = None):
         """
         :param peerid: The peerid of the given connector
         """
+        self.peerid = protocol.PeerID() if peerid is None else peerid
         protocol.BIPFactory.__init__(self)
 
     def __hash__(self):
         """
+        Basic hash of a connector
         """
-        return __peerid__
+        return self.peerid
 
     def send(self, msg, peerid = None):
         """
@@ -39,66 +56,67 @@ class ConnectorBase(protocol.BIPFactory):
         :param msg: The actual message
         :param peerid: The recipient peerid
         """
+
+        if len(self.peers) == 0:
+            if logger.isEnabledFor(logging.WARNING):
+                logger.warning("Sending a message through a connector with 0 "
+                               "Connected peers ...")
+            return
+
         if not self.output:
             if logger.isEnabledFor(logging.WARNING):
                 logger.warning("Trying to send msg through an Input Only Connector")
             raise RuntimeError("Sending msg through an Input Only Connector")
 
+
         if peerid is None:
-            map(lambda proto: proto.send(msg, self.peerid), self.peers.itervalues())
+            map(lambda proto: proto.send(msg, self.peerid), self.peers.values())
         else:
             self.peers[peerid].send(msg, self.peerid)
 
-    def close(self, peerid = None):
-        """
-        This function close a connection with a peer. If peerid is not provided,
-        close all remaining connections.
+    def connected(self, proto, rpeerid):
+        protocol.BIPFactory.connected(self, proto, rpeerid)
+        addr, port = proto.getRemoteInfo()
 
-        :param peerid: The peerid
+
+    def connect(self, cdesc):
         """
-        if peerid is None:
-            map(lambda proto: proto.stop(), self.peers.itervalues())
+        """
+        if isinstance(cdesc, tuple):
+            addr, port = cdesc
         else:
-            self.peers[peerid].stop()
+            addr, port = cdesc.addr, cdesc.tcp
 
-        self.__tcp__ = None
-
-    def connect(self, *args):
-        """
-        """
-        if len(args) == 1:
-            # PROXY
-            pass
-
-        if len(args) == 2:
-            addr, port = args
 
         reactor.Reactor().connectTCP(addr, port, self)
-        return True
+
 
     def received(self, proto, peerid, msgid, msg):
         protocol.BIPFactory.received(self, proto, peerid, msgid, msg)
-
-        if msgid != 0 and not self.input:
+        if  (not self.input) and (msgid != 0):
             if logger.isEnabledFor(logging.WARNING):
-                logger.warning("Trying to send msg through an Input Only Connector")
-            raise RuntimeError("Sending msg through an Input Only Connector")
+                logger.warning("Receiving message through an Output Only Connection")
+            raise RuntimeError("Receiving msg through an Output Only Connector")
+
 
     def start(self, tcpport = 0, udpport = 0, peerid = None):
-        self.peerid = protocol.PeerID() if peerid is None else peerid
-        stcp = reactor.Reactor().listenTCP(tcpport, self)
-        addr, self.__tcp__ = stcp.getsockname()
+        self.peerid         = self.peerid if peerid is None else peerid
+        stcp                = reactor.Reactor().listenTCP(tcpport, self)
+        addr, self.__tcp    = stcp.getsockname()
 
         self.udp = None
 
         #sudp = reactor.listenUDP(0, self)
         #addr, self.udp = sudp.getsockname()
 
+    def stop(self):
+        pass
+
 
     def __get_tcp_port__(self):
-        if self.__tcp__ is None:
+        if self.__tcp is None:
             self.start()
-        return self.__tcp__
+        return self.__tcp
 
     tcp = property(__get_tcp_port__)
 
@@ -109,7 +127,6 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
     Connector + Simple RAW Event dispatcher for object callback.
     """
     events = ['connected', 'disconnected', 'received']
-
 
     def __init__(self, *args, **kw):
         ConnectorBase.__init__(self, *args, **kw)

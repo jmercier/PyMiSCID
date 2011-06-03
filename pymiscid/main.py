@@ -34,7 +34,6 @@ if __name__ == '__main__':
     f.bind(o)
 
     f.start()
-    print (f.tcp, f.udp)
 
     import reactor
     reactor.Reactor().run()

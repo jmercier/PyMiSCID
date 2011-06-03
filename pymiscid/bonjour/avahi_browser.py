@@ -187,15 +187,15 @@ class BonjourServiceDiscovery(BonjourObject, events.EventDispatcherBase):
         if logger.isEnabledFor(logging.DEBUG):
             fname = kw["name"].strip("/c") if "name" in kw else "UNKNOWN"
             logger.debug("%s resolved [%s] : %s on %s - %s (%s) %s"
-                        % (fname, self.domain, rname, raddr, rhost, rport, str(kw)))
+                        % (rname, self.domain, fname, raddr, rhost, rport, str(kw)))
 
-        self.addedEvent(rname, rhost, raddr, rport, kw, rhost)
+        self.addedEvent(str(rname), rhost, raddr, int(rport), kw)
 
     def __service_removed__(self, rinterface, rprotocol, rname, rtype,
                             rdomain, rflags):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Service removed[%s] : %s" % (self.domain, rname))
-        self.removedEvent(rname)
+        self.removedEvent(str(rname))
 
 class BonjourServicePublisher(BonjourObject):
     """
@@ -238,19 +238,3 @@ class BonjourServicePublisher(BonjourObject):
     def __del__(self):
         self.unpublish()
 
-if __name__ == '__main__':
-    import gobject
-
-    typedisc = BonjourTypeDiscovery("_bip")
-    typedisc.start()
-
-    def added(domain):
-        print "Added : ", domain
-    typedisc.addedEvent.addObserver(added)
-
-    def removed(domain):
-        print "Removed : ", domain
-    typedisc.removedEvent.addObserver(removed)
-
-    m = gobject.MainLoop()
-    m.run()

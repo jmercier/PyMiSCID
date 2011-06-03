@@ -24,7 +24,6 @@ class EventSupervisor(object):
         def __exit__(self, typ, value, traceback):
             self.processing = False
 
-
 class Event(object):
     """
     This is a simple object which represent an event it can be dispatched which
@@ -101,9 +100,6 @@ class Event(object):
     def __len__(self):
         return len(self.observers)
 
-
-
-
 class EventDispatcherBase(object):
     """
     This object act as a base object for an aglomerate of events. It provides
@@ -134,9 +130,9 @@ class EventDispatcherBase(object):
             try:
                 getattr(self, evt + "Event").addObserver(getattr(obj, evt), *args, oid = oid)
             except AttributeError, err:
-                if logger.isEnabledFor(logging.WARNING):
-                    logger.warning("Object : %s do not have attribute -- %s --" % \
-                               (repr(obj), evt))
+                if logger.isEnabledFor(logging.debug):
+                    logger.debug("Object : %s do not have an attribute [%s], no event will be dispatched" % \
+                               (str(obj), evt))
         return oid
 
     def removeObserver(self, oid):
@@ -160,7 +156,6 @@ class EventDispatcherBase(object):
         if evtname in self.events:
             getattr(self, evtname + "Event")(*args)
 
-
 class MutexedEvent(Event):
         def __init__(self, mutex = None):
                 Event.__init__(self)
@@ -169,7 +164,6 @@ class MutexedEvent(Event):
         def dispatch(self, *args):
                 with self.mutex:
                         Event.dispatch(self, *args)
-
 
 class MutexedEventDispatcher(EventDispatcherBase):
         event_type = MutexedEvent
