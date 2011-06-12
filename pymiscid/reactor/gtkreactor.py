@@ -24,7 +24,6 @@ class GTKReactor(object):
     __active__ = False
 
     def __init__(self):
-        self.__socketbuilders       = {}
         self.lock                   = threading.Lock()
         self.__factories            = set()
 
@@ -71,9 +70,10 @@ class GTKReactor(object):
         self.active = False
 
 
-    def __onconnect__(self, s, *args):
+    def __onconnect__(self, s, condition, factory):
         with self.lock:
-            proto = self.__socketbuilders[s].build(*s.accept())
+            sock, addr = s.accept()
+            proto = factory.build(sock, addr)
         return True
 
     def __create_server_socket__(self, port, stype):
@@ -83,7 +83,8 @@ class GTKReactor(object):
 
         addr, port = s.getsockname()
         if logger.isEnabledFor(logging.INFO):
-            logger.info("Server Socket Started on [port : %d]" % (port))
+            strtype = "TCP" if stype == socket.SOCK_STREAM else "UDP"
+            logger.info("Server Socket Started on [port : %d] [type : %s]" % (port, strtype))
 
         return s
 
@@ -95,33 +96,24 @@ class GTKReactor(object):
         s.connect((address, port))
         return s
 
-
     def listenTCP(self, port, factory):
         """
         """
         s = self.__create_server_socket__(port, socket.SOCK_STREAM)
 
         with self.lock:
-            self.__socketbuilders[s] = factory
             self.__factories.add(factory)
 
         s.listen(self.__backlog__)
-        gobject.io_add_watch(s, gobject.IO_IN, self.__onconnect__)
+        gobject.io_add_watch(s, gobject.IO_IN, self.__onconnect__, factory)
 
         return s
+
+
 
     def callLater(self, callback, time):
-        gobject.timeout_add_seconds(int(time), callback)
+        gobject.timeout_add(int(time * 1000), callback)
 
-    def listenUDP(self, port, factory):
-        """
-        """
-        with self.lock:
-            self.__factories.add(factory)
-
-        s = self.__create_server_socket__(port, socket.SOCK_DGRAM)
-        proto = factory.build(s, 'localhost')
-        return s
 
     def connectTCP(self, addr, port, factory):
         """
@@ -130,18 +122,8 @@ class GTKReactor(object):
             self.__factories.add(factory)
 
         s = self.__create_client_socket__(addr, port, socket.SOCK_STREAM)
-        proto = factory.build(s, addr)
-        with self.lock:
-            self.__socketbuilders[s] = factory
-
-    def connectUDP(self, addr, port, factory):
-        """
-        """
-        with self.lock:
-            self.__factories.add(factory)
-
-        s = self.__create_client_socket__(addr, port, socket.SOCK_DGRAM)
         return factory.build(s, addr)
+
 
     def __signal_handler__(self, *args):
         self.loop.quit()
