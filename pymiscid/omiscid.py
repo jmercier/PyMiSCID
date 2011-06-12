@@ -62,6 +62,7 @@ class ConnectorMixin(object):
                     structure = self.structure,
                     tcp = self.tcp)
 
+
 connector.Connector.__bases__ += (ConnectorMixin,)
 
 class Service(object):
@@ -84,6 +85,8 @@ class Service(object):
 
 
     def __init_control(self):
+        """
+        """
         peerid_gen  = connector.protocol.PeerIDIterator()
 
         self.control            = rpc.RPCConnector()
@@ -97,6 +100,8 @@ class Service(object):
 
     def start(self, subdomain = None):
         """
+        This function starts the service object. It publish it's description to
+        DNS-SD and start the socket server of every underlying connectors.
         """
         if self.publisher is not None:
             return False
@@ -109,7 +114,7 @@ class Service(object):
         self.connectors     = {}
         self.publisher      = bonjour.BonjourServicePublisher()
 
-        # Populating Connector Attribute
+        # Populating Connector Attribute from introspection
         for attrname in dir(self):
             attr = getattr(self, attrname)
             if isinstance(attr, connector.ConnectorBase):
@@ -125,9 +130,8 @@ class Service(object):
             c.start()
             c.TXTRecord(record = record)
 
-
+        # Publishing our service through DNS-SD
         domain = OMISCID_DOMAIN if subdomain is None else "_bip_%s._tcp" % subdomain
-
         self.publisher.publish(str(self.control.peerid), self.control.tcp, domain, txt = record)
 
         return True
@@ -135,6 +139,8 @@ class Service(object):
 
     def stop(self):
         """
+        This method is stop the publisher and close every socket server in this
+        service. All the underlying connection are closed.
         """
         if self.publisher is None:
             return False;
@@ -160,6 +166,10 @@ class Service(object):
                     control = self.control.StructuredDescription(),
                     user = pwd.getpwuid(os.getuid())[0],
                     host = socket.gethostname())
+
+    @rpc.remote_callable
+    def get_peers(self):
+        return self.peers.keys()
 
 
 class ServiceRepository(events.EventDispatcherBase):
