@@ -9,13 +9,15 @@ import threading
 import socket
 import math
 import reactor
-
+import select
 
 logger = logging.getLogger(__name__)
 
 LINE_ENDING = "\r\n"
 BIP_HEADER_TEMPLATE = "%s %s %.8x %.8x" + LINE_ENDING
 BIP_GREETING_TIMEOUT = 1  # in seconds
+
+DATAGRAM_MAXIMUM_SIZE = 2 ** 16
 
 def PeerIDIterator(base = None):
     peerid = PeerID() if base is None else base
@@ -90,29 +92,40 @@ class BIPProtocol(threading.Thread):
     __version__         = '1.0'
     __greeting_msg__    = "%s/%s" % (__name__, __version__)
     __hdr_size__        = len(BIP_HEADER_TEMPLATE %
-                                (__greeting_msg__, str(PeerID(0)), 0, 0)) \
-                                + len(LINE_ENDING)
+                                (__greeting_msg__, str(PeerID(0)), 0, 0))
 
     __stop_evt__            = False
     __msgid__               = 0
     __connected__           = False
     __initial_buffer_size__ = 1000
-    __maximum_msg_size      = 1e7
+    __maximum_msg_size      = 1e8
 
-    def __init__(self, sock, addr, factory):
+    def __init__(self, sock, udpsock, factory):
         """
         :param sock: The client socket on which the protocol will run
         :param addr: The client address
         :param peerid: The peerid of the protocol
         """
-        threading.Thread.__init__(self, name = "%s:%s" % (self.__class__.name, addr))
+        threading.Thread.__init__(self, name = "%s:%s[%d]" % ((self.__class__.name,) + sock.getpeername()))
 
-        self.transport      = sock
-        self.addr           = addr
         self.factory        = factory
+        self.transportTCP   = sock
+        self.transportUDP   = udpsock
 
-        self.__hdr_buffer__ = bytearray(self.__hdr_size__)
+        self.__hdr_buffer   = bytearray(DATAGRAM_MAXIMUM_SIZE)
         self.__msg_buffer   = bytearray(self.__initial_buffer_size__)
+
+        self.lock           = threading.Lock()
+        self.lost_count     = 0
+
+
+    def __set_udp_transport(self, sock):
+        self.transport_list = [self.transportTCP, sock]
+
+    def __get_udp_transport(self):
+        return self.transport_list[-1]
+
+    transportUDP = property(__get_udp_transport, __set_udp_transport)
 
 
     def run(self):
@@ -124,13 +137,29 @@ class BIPProtocol(threading.Thread):
 
         factory.connectedTCP(self)
 
+        currentid = -1
+        transport_list = [self.transportTCP, self.transportUDP]
+
         while not self.__stop_evt__:
             try:
-                peerid, msgid, size = self.__recv_msg__()
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug("Message Received [id : %s] [size : %d], [content : %s]" % \
-                                    (str(peerid), size, str(self.__msg_buffer[:size])))
-                factory.received(self, peerid, msgid, str(self.__msg_buffer[:size]))
+                select_list = select.select(transport_list, [], [], 3)[0]
+            except (select.error):
+                break
+
+            try:
+                for transport in select_list:
+                    if transport == self.transportUDP:
+                        peerid, msgid, size, msg = self.__recv_msg_dgram(transport)
+                    else:
+                        peerid, msgid, size, msg = self.__recv_msg(transport)
+
+                    currentid = msgid
+                    if logger.isEnabledFor(logging.DEBUG):
+                        proto = "TCP" if transport == self.transportTCP else "UDP"
+                        logger.debug("Message Received through %s [id : %s] [size : %d], [content : %s]" % \
+                                    (proto, str(peerid), size, msg))
+
+                    factory.received(self, peerid, msgid, msg)
             except (socket.timeout):
                 pass
             except (socket.error, RuntimeError):
@@ -139,23 +168,33 @@ class BIPProtocol(threading.Thread):
                 import traceback
                 traceback.print_exc()
 
-        self.transport.close()
+        for transport in transport_list:
+            transport.close()
+
         factory.disconnectedTCP(self)
+
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Transport Loop Ended")
+
 
     def stop(self):
         """
         This method shutdown the underlying socket.
         """
-        self.transport.shutdown(socket.SHUT_RDWR)
+        for transport in [self.transportTCP, self.transportUDP]:
+            try:
+                transport.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
 
     def getInfo(self):
         """
         """
-        addr, port = self.transport.getsockname()
+        addr, port = self.transportTCP.getsockname()
         return addr, port
 
-    def getRemoteInfo(self):
-        addr, port = self.transport.getpeername()
+    def getPeerInfo(self):
+        addr, port = self.transportTCP.getpeername()
         return addr, port
 
     def __resize_buffer__(self, minimum_size):
@@ -166,54 +205,85 @@ class BIPProtocol(threading.Thread):
         :param minimum_size; The minimum buffer size in bytes
         """
         if logger.isEnabledFor(logging.INFO):
-            logger.info("Resizing MSG input buffer size to [%d]" % new_buffer_size)
+            logger.info("Resizing MSG input buffer size to [%d]" % minimum_size)
 
         self.__msg_buffer = bytearray(minimum_size)
 
-    def __recv_msg__(self):
+    def __recv_msg_dgram(self, transport):
+        size = transport.recv_into(self.__hdr_buffer, len(self.__hdr_buffer))
+        hdr = self.__hdr_buffer[:self.__hdr_size__]
+
+        # Header parsing
+        proto, peerid, msgid, size  = str(hdr).split()
+        peerid                      = PeerID(peerid)
+        size                        = int(size, 16)
+        msgid                       = int(msgid, 16)
+
+
+        return peerid, msgid, size, str(self.__hdr_buffer[self.__hdr_size__:size])
+
+
+
+    def __recv_msg(self, transport):
         """
         Internal method that received the BIP header and the following message
         This function block should block until the entire message is received.
         """
         # Receiving the Header
-        recv_into_wait(self.transport, self.__hdr_buffer__, len(self.__hdr_buffer__))
+        recv_bytes = transport.recv_into(self.__hdr_buffer, self.__hdr_size__)
+        hdr = self.__hdr_buffer[:self.__hdr_size__]
+        if self.__hdr_size__ != recv_bytes:
+            raise RuntimeError("Invalid Header Detected")
+
 
         # Header parsing
-        proto, peerid, msgid, size  = str(self.__hdr_buffer__).split()
+        proto, peerid, msgid, size  = str(hdr).split()
         peerid                      = PeerID(peerid)
         size                        = int(size, 16)
         msgid                       = int(msgid, 16)
 
-        if (self.__maximum_msg_size != 0) and (size > self.__maximum_msg_size):
-            raise RuntimeError("Message size over limit ... discarding")
 
         # Resizing the buffer as needed
-        if size > len(self.__msg_buffer):
-            self.__resize_buffer__(size)
+        realsize = size + len(LINE_ENDING)
+        if realsize > len(self.__msg_buffer):
+            self.__resize_buffer__(realsize)
 
         # Receiving the actual message
-        recv_into_wait(self.transport, self.__msg_buffer, size)
+        recv_into_wait(transport, self.__msg_buffer, realsize)
 
-        return peerid, msgid, size
+        return peerid, msgid, size, str(self.__msg_buffer[:size])
 
 
-    def send(self, msg, peerid):
+    def send(self, msg, peerid, udp = False):
         """
         Encapsulate the msg with the bip header and send it through the
         transport
 
         :param msg: The actual message to send
         """
+        self.lock.acquire()
+        msgid = self.__msgid__
+        self.__msgid__ += 1
+        self.lock.release()
+
         size = len(msg)
         headers = BIP_HEADER_TEMPLATE % \
                         (self.__greeting_msg__, peerid,
-                         self.__msgid__,  size)
+                         msgid,  size)
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Message Sent [id : %s] [size : %d], [content : %s]" % \
-                            (str(peerid), size, msg))
+            logger.debug("Message Sent [id : %s] [size : %d, %s], [content : %s]" % \
+                            (str(peerid), size, "UDP" if udp else "TCP", msg,))
 
-        self.transport.sendall(''.join((headers, LINE_ENDING, msg)))
-        self.__msgid__ += 1
+
+        if udp:
+            finalized_msg = ''.join((headers, msg, LINE_ENDING))
+            self.transportUDP.send(finalized_msg)
+        else:
+            self.transportTCP.send(headers)
+            self.transportTCP.sendall(msg)
+            self.transportTCP.send(LINE_ENDING)
+
+
 
 
 
@@ -224,74 +294,88 @@ class BIPFactory(object):
     peerid      = PeerID(0)
 
     def __init__(self):
-        self.peers          = {}
-        self.pending_peers  = []
-        self.lock           = threading.Lock()
+        self.peers              = {}
+        self.__unknown_peers    = []
+        self.lock               = threading.Lock()
 
-    def build(self, sock, addr):
+    def build(self, tcpsock, addr):
         """
-        Called by the Reactor
+        (Main Thread)
         """
-        sock.settimeout(self.timeout)
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        proto = self.protocol(sock, addr, self)
+        # TCP Socket Caracteristics
+        tcpsock.settimeout(self.timeout)
+        tcpsock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        udpsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udpsock.bind((socket.gethostname(), 0))
+
+        udpport, addr = udpsock.getsockname()
+
+        proto = self.protocol(tcpsock, udpsock, self)
 
         with self.lock:
-            self.pending_peers.append(proto)
+            self.__unknown_peers.append(proto)
 
         # Greeting Message
-        proto.send("", self.peerid)
+        udpaddr, udpport = proto.transportUDP.getsockname()
+        proto.send(str(udpport), self.peerid)
         proto.start()
         return proto
 
+
     def connected(self, proto, rpeerid):
         """
-        Called by protocol
+        (Protocol Thread)
         """
         with self.lock:
-            self.pending_peers.remove(proto)
+            self.__unknown_peers.remove(proto)
             self.peers[rpeerid] = proto
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("TCP Connection Established with [%s]" % str(rpeerid))
+        if logger.isEnabledFor(logging.info):
+            logger.info("TCP Connection Established with [%s]" % str(rpeerid))
 
 
     def disconnected(self, proto, rpeerid):
         """
-        Called by protocol
+        (Protocol Thread)
         """
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Connection Closed with [%s]" % str(rpeerid))
 
     def disconnectedTCP(self, proto):
         """
-        Called by protocol
+        (Protocol Thread)
         """
         with self.lock:
             for rpeerid in self.peers.keys():
                 if proto == self.peers[rpeerid]:
                     del self.peers[rpeerid]
                     self.disconnected(proto, rpeerid)
-            if proto in self.pending_peers:
-                self.pending_peers.remove(proto)
+            if proto in self.__unknown_peers:
+                self.__unknown_peers.remove(proto)
 
-    def connectionFailed(self, proto):
-        """
-        Called by protocol
-        """
-        proto.stop()
-        if logger.isEnabledFor(logging.WARNING):
-            logger.warning("BIP Handshake with %s [%d] has failed, Invalid"
-                               "Protocol, closing connection..." % proto.getRemoteInfo())
+    def __timeout_callback(self, proto):
+        with self.lock:
+            """
+            (Main Thread)
+            """
+            if proto in self.__unknown_peers:
+                proto.stop()
+                self.__unknown_peers.remove(proto)
+                if logger.isEnabledFor(logging.WARNING):
+                    logger.warning("BIP Handshake with %s [%d] has failed, after %ds "
+                                   "closing connection..." % (proto.getPeerInfo() + (self.timeout,)))
+
 
     def connectedTCP(self, proto):
         """
+        (Protocol Thread)
         Should Eventually Use a Timer to disconnect when we did not
         received the connection initialization message in a correct
         amount of time.
+
+        :param proto: the protocol
         """
         def timeout_callback():
-            if proto in self.pending_peers:
-                self.connectionFailed(proto)
+            self.__timeout_callback(proto)
 
 
         reactor.Reactor().callLater(timeout_callback, self.timeout)
@@ -299,6 +383,7 @@ class BIPFactory(object):
 
     def close(self, peerid = None):
         """
+        (Any Thread)
         This function close a connection with a peer. If peerid is not provided,
         close all remaining connections.
 
@@ -308,28 +393,44 @@ class BIPFactory(object):
             if peerid is None:
                 for p in self.peers.keys():
                     self.peers[p].stop()
-                for p in self.pending_peers:
+                for p in self.__unknown_peers:
                     p.stop()
-                    self.pending_peers.remove(p)
+                    self.__unknown_peers.remove(p)
             else:
                 self.peers[peerid].stop()
 
     def getPeerInfo(self, peerid):
         """
+        (Any Thread)
+
+        :param peerid: the peerid we want the info from
         """
-        with self.lock:
-            return self.peers[peerid].getInfo()
+        return self.peers[peerid].getInfo()
+
 
     def received(self, proto, peerid, msgid, msg):
+        """
+        (Protocol Thread)
+
+        :param proto: The protocol the message come from
+        :param peerid: Peerid of the incomming msg
+        :param msgid: The id of the message
+        :param msg: The actual message
+        """
         if peerid not in self.peers:
             self.connected(proto, peerid)
+            enabled = "Disabled"
+            if msgid == 0: # SHOULD ALWAY BE
+                try:
+                    udpport = int(msg)
+                    addr, tcpport = proto.getPeerInfo()
+                    proto.transportUDP.connect((addr, udpport))
+                    enabled = "Enabled"
+                except (Exception):
+                    print "EXCEPTION"
 
-    def __del__(self):
-        with self.lock:
-            for peer in self.peers.values():
-                self.peers[peer].close()
-
-
+            if logger.isEnabledFor(logging.INFO):
+                logger.info("UDP %s on [%s]" % (enabled, str(peerid)))
 
 
 

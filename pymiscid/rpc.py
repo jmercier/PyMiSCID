@@ -10,6 +10,7 @@ import connector
 
 import threading
 import variable
+import new
 
 class TimeoutError(Exception): pass
 
@@ -136,7 +137,8 @@ class RPCConnector(connector.Connector):
 
 
     def register(self, name, method):
-        self.__rcallables__[name] = wref.WeakBoundMethod(method)
+        wmethod = wref.WeakBoundMethod(method) if isinstance(method, new.instancemethod) else weakref.ref(method)
+        self.__rcallables__[name] = wmethod
 
     def __deferred_deleted__(self, deferred):
         pass
@@ -146,7 +148,7 @@ class RPCConnector(connector.Connector):
         """
 
         connector.ConnectorBase.received(self, proto, peerid, msgid, msg)
-        if len(msg) == 0:
+        if msgid == 0:
             return
 
         jsondict = json.loads(msg)

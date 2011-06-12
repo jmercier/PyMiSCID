@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 class ConnectorBase(protocol.BIPFactory):
     """
     """
-
-
     input = output = True
 
     __tcp       = None
@@ -48,7 +46,7 @@ class ConnectorBase(protocol.BIPFactory):
         """
         return self.peerid
 
-    def send(self, msg, peerid = None):
+    def send(self, msg, peerid = None, udp = False):
         """
         This function send a message to a peer. If peerid is not provided,
         send the message to all peers.
@@ -57,12 +55,6 @@ class ConnectorBase(protocol.BIPFactory):
         :param peerid: The recipient peerid
         """
 
-        if len(self.peers) == 0:
-            if logger.isEnabledFor(logging.WARNING):
-                logger.warning("Sending a message through a connector with 0 "
-                               "Connected peers ...")
-            return
-
         if not self.output:
             if logger.isEnabledFor(logging.WARNING):
                 logger.warning("Trying to send msg through an Input Only Connector")
@@ -70,14 +62,9 @@ class ConnectorBase(protocol.BIPFactory):
 
 
         if peerid is None:
-            map(lambda proto: proto.send(msg, self.peerid), self.peers.values())
+            map(lambda proto: proto.send(msg, self.peerid, udp = udp), self.peers.values())
         else:
-            self.peers[peerid].send(msg, self.peerid)
-
-    def connected(self, proto, rpeerid):
-        protocol.BIPFactory.connected(self, proto, rpeerid)
-        addr, port = proto.getRemoteInfo()
-
+            self.peers[peerid].send(msg, self.peerid, udp = udp)
 
     def connect(self, cdesc):
         """
@@ -104,21 +91,17 @@ class ConnectorBase(protocol.BIPFactory):
         stcp                = reactor.Reactor().listenTCP(tcpport, self)
         addr, self.__tcp    = stcp.getsockname()
 
-        self.udp = None
 
         #sudp = reactor.listenUDP(0, self)
         #addr, self.udp = sudp.getsockname()
 
-    def stop(self):
-        pass
 
-
-    def __get_tcp_port__(self):
+    def __get_tcp_port(self):
         if self.__tcp is None:
             self.start()
         return self.__tcp
+    tcp = property(__get_tcp_port)
 
-    tcp = property(__get_tcp_port__)
 
 
 
@@ -160,12 +143,12 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
 
         """
         ConnectorBase.received(self, proto, peerid, msgid, msg)
-        if len(msg) != 0:
+        if msgid != 0:
             self.receivedEvent(msg)
 
 
 class IConnector(Connector):
-    output = False
+    input = False
 
 class OConnector(Connector):
     output = False
