@@ -212,8 +212,8 @@ class BonjourServicePublisher(BonjourObject):
         if txt is None:
             txt = {}
         if logger.isEnabledFor(logging.INFO):
-            logger.info("Starting service on %d with description %s" % \
-                                                                (port, str(txt)))
+            logger.info("Starting service on [%d, %s] with description %s" % \
+                                                                (port, domain, str(txt)))
         bus = dbus.SystemBus()
         grp = dbus.Interface(
                     bus.get_object(avahi.DBUS_NAME,
