@@ -18,7 +18,7 @@ import random
 import pwd
 import os
 import threading
-import proxy
+import description
 import bip.protocol as protocol
 import codebench.events as events
 import socket
@@ -37,9 +37,9 @@ from standard import UNBOUNDED_PEERID, \
                      OMISCID_DOMAIN, \
                      CONSTANT_PREFIX
 
-connector.Connector.txt_description = IO_CONNECTOR_PREFIX
-connector.IConnector.txt_description = INPUT_CONNECTOR_PREFIX
-connector.OConnector.txt_description = OUTPUT_CONNECTOR_PREFIX
+connector.Connector.txt_description     = IO_CONNECTOR_PREFIX
+connector.IConnector.txt_description    = INPUT_CONNECTOR_PREFIX
+connector.OConnector.txt_description    = OUTPUT_CONNECTOR_PREFIX
 
 class ConnectorMixin(object):
     name = "UnNamed"
@@ -169,7 +169,7 @@ class Service(object):
 
     @rpc.remote_callable
     def get_peers(self):
-        return self.peers.keys()
+        return [int(k) for k in self.control.peers.keys()]
 
 
 class ServiceRepository(events.EventDispatcherBase):
@@ -177,22 +177,21 @@ class ServiceRepository(events.EventDispatcherBase):
 
     def __init__(self, subdomain = ""):
         events.EventDispatcherBase.__init__(self)
-        self.connector  = rpc.RPCConnector()
-        self.proxies    = {}
-        self.deferreds  = {}
-        self.bsd        = bonjour.BonjourServiceDiscovery(subdomain)
-        self.lock       = threading.Lock()
+        self.connector      = rpc.RPCConnector()
+        self.descriptions   = {}
+        self.deferreds      = {}
+        self.bsd            = bonjour.BonjourServiceDiscovery(subdomain)
+        self.lock           = threading.Lock()
 
         self.bsd.addObserver(self)
         self.connector.addObserver(self)
         self.bsd.start()
 
     def addObserver(self, observer, *args):
-        events.EventDispatcherBase.addObserver(observer, *args)
+        events.EventDispatcherBase.addObserver(self, observer, *args)
         with self.lock:
-            for p in self.proxies:
+            for p in self.descriptions:
                 observer(p, *args)
-
 
 
     def added(self, peerid, host, addr, port, desc):
@@ -200,9 +199,9 @@ class ServiceRepository(events.EventDispatcherBase):
 
     def removed(self, peerid):
         pid = protocol.PeerID(peerid)
-        if pid in self.proxies:
+        if pid in self.descriptions:
             with self.lock:
-                p = self.proxies.pop(pid)
+                p = self.descriptions.pop(pid)
             if logger.isEnabledFor(logging.INFO):
                 logger.info("OMiSCID Service Removed [%s] %s" %
                             (str(peerid), p.name) )
@@ -212,16 +211,22 @@ class ServiceRepository(events.EventDispatcherBase):
     def connected(self, peerid):
         with self.lock:
             callback = rpc.MethodCallback(self.__serviceResolved, peerid)
+
             deferred = self.connector.call("get_description", callback = callback, peerid = peerid)
             self.deferreds[peerid] = deferred
 
     def __serviceResolved(self, answer, peerid):
         with self.lock:
             addr, port = self.connector.getPeerInfo(peerid)
-            answer.update(dict(addr = addr, peerid = peerid))
+
+            # For debian and such
+            if addr == '127.0.0.1':
+                addr = socket.gethostbyname(socket.gethostname())
+
+            answer.update(dict(addr = addr, port = port, peerid = peerid))
             self.deferreds.pop(peerid)
-            p = proxy.ServiceProxy(answer)
-            self.proxies[peerid] = p
+            p = description.ServiceDescription(answer)
+            self.descriptions[peerid] = p
 
         if logger.isEnabledFor(logging.INFO):
             addr, port = self.connector.getPeerInfo(peerid)
@@ -249,26 +254,21 @@ if __name__ == '__main__':
     import logging.config
     logging.getLogger().setLevel(logging.DEBUG)
 
-    class S(Service):
-        name = 'euh'
-        c = connector.Connector
+    services = []
+    for i in range(1):
+        class S(Service):
+            name = 'Yeah_%d' % i
+        for j in range(1):
+            setattr(S, "c_%d" % j, connector.Connector)
 
-    class S1(Service):
-        def __init__(self):
-            Service.__init__(self)
-            self.c = connector.Connector()
-            self.name = "YAHOO"
+        services.append(S())
 
-    ser = S()
-    ser2 = S1()
-
-    ser.start()
-    ser2.start(subdomain = "jee")
+    [s.start() for s in services]
 
 
     import reactor
     reactor.Reactor().run()
 
-    ser.stop()
-    ser2.stop()
+    [s.stop() for s in services]
+
 

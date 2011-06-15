@@ -50,57 +50,6 @@ class DeferredCallback(object):
             del connector.__pending_results__[self.rid]
 
 
-class DeferredResult(object):
-    def __init__(self, rid, connector, callback = None):
-
-        self.__lock         = threading.Lock()
-        self.__recv_evt     = []
-        self.__results      = []
-        self.rid            = rid
-        self.wconnector     = weakref.ref(connector)
-        self.callback       = callback
-
-    def __set_result__(self, result):
-        with self.__lock:
-            self.__results.append(result)
-            if len(self.__recv_evt) > 0:
-                evt = self.__recv_evt.pop()
-                evt.set()
-
-    def addObserver(self, observer, *args, **kw):
-        for r in self.__results:
-            self(r)
-
-    result = property(fset = __set_result__)
-
-    def wait(self, timeout = 10):
-        self.__lock.acquire()
-        if len(self.__results) < 1:
-            evt = threading.Event()
-
-            self.__recv_evt.append(evt)
-            self.__lock.release()
-
-            if not evt.wait(timeout = timeout):
-                raise TimeoutError("Deferred Result Timeout Reached")
-            self.__lock.acquire()
-
-        res = self.__results.pop()
-        if isinstance(res, Exception):
-            self.__lock.release()
-            raise res
-        self.__lock.release()
-
-        return res
-
-    def __del__(self):
-        connector = self.wconnector()
-        if connector is None:
-            return
-
-        if self.rid in connector.__pending_results__:
-            del connector.__pending_results__[self.rid]
-
 class StructuredConnector(connector.Connector):
     def send(self, structured_msg):
         connector.Connector.send(json.dumps(structured_msg))
@@ -120,6 +69,29 @@ class StructuredConnector(connector.Connector):
         jsondict = json.loads(msg)
         self.receivedEvent(jsondict)
 
+class RPCConnectorProxy(object):
+    built = False
+    def __init__(self, connector, peerid):
+        self.connector = connector
+        self.peerid = peerid
+        self.deferred = self.connector.call("__listing", peerid = peerid, callback = self.__build)
+
+    def __build(self, description):
+        print("BUILD")
+        self.deferred = None
+        fcts = {}
+        cls = type("RPCConnectorProxy_%s" %str(self.peerid), (object,), dict(built = True))
+        for fct in description:
+            def fct_proxy(self, *args, **kw):
+                if "callback" not in kw:
+                    self.connector.send(fct, args = args)
+                else:
+                    return self.connector.call(fct, args = args, callback = kw['callback'])
+            fct_proxy.__name__ = str(fct)
+            setattr(cls, fct, new.instancemethod(fct_proxy, None, cls))
+
+        self.__class__ = cls
+
 
 class RPCConnector(connector.Connector):
     events          = ['connected', 'disconnected']
@@ -132,7 +104,7 @@ class RPCConnector(connector.Connector):
         self.__bounded__ = []
         self.__pending_results__ = {}
 
-        self.register("listing", self.__listing__)
+        self.register("__listing", self.__listing)
 
 
 
@@ -184,7 +156,7 @@ class RPCConnector(connector.Connector):
         if cid != None:
             connector.ConnectorBase.send(self, json.dumps(resultdict), peerid = peerid)
 
-    def __listing__(self):
+    def __listing(self):
         """
         """
         return self.__rcallables__.keys()
@@ -230,6 +202,9 @@ class RPCConnector(connector.Connector):
         connector.ConnectorBase.send(self, msg, peerid = peerid)
 
         return result
+
+
+
 
 
 
