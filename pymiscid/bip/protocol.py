@@ -137,9 +137,7 @@ class BIPProtocol(threading.Thread):
 
         factory.connectedTCP(self)
 
-        currentid = -1
         transport_list = [self.transportTCP, self.transportUDP]
-
         while not self.__stop_evt__:
             try:
                 select_list = select.select(transport_list, [], [], 3)[0]
@@ -148,12 +146,9 @@ class BIPProtocol(threading.Thread):
 
             try:
                 for transport in select_list:
-                    if transport == self.transportUDP:
-                        peerid, msgid, size, msg = self.__recv_msg_dgram(transport)
-                    else:
-                        peerid, msgid, size, msg = self.__recv_msg(transport)
+                    recv_msg = self.__recv_msg_dgram if transport == self.transportUDP else self.__recv_msg
+                    peerid, msgid, size, msg = recv_msg(transport)
 
-                    currentid = msgid
                     if logger.isEnabledFor(logging.DEBUG):
                         proto = "TCP" if transport == self.transportTCP else "UDP"
                         logger.debug("Message Received through %s [id : %s] [size : %d], [content : %s]" % \
@@ -211,6 +206,8 @@ class BIPProtocol(threading.Thread):
 
     def __recv_msg_dgram(self, transport):
         size = transport.recv_into(self.__hdr_buffer, len(self.__hdr_buffer))
+        if size == 0:
+            raise socket.error()
         hdr = self.__hdr_buffer[:self.__hdr_size__]
 
         # Header parsing
