@@ -69,15 +69,42 @@ class StructuredConnector(connector.Connector):
         jsondict = json.loads(msg)
         self.receivedEvent(jsondict)
 
-class RPCConnectorProxy(object):
-    built = False
-    def __init__(self, connector, peerid):
-        self.connector = connector
-        self.peerid = peerid
-        self.deferred = self.connector.call("__listing", peerid = peerid, callback = self.__build)
 
-    def __build(self, description):
-        print("BUILD")
+
+class ConnectorProxyBase(object):
+    valid = False
+    def __init__(self, connector, cdescription, callback = None):
+        self.connector  = connector
+        self.valid      = False
+        self.oid        = self.connector.addObserver(self)
+        self.connector.connect(cdescription)
+        self.peerid     = cdescription.peerid
+        self.callback   = callback
+
+    def connected(self, peerid):
+        if self.peerid == peerid:
+            self.__connected__()
+
+    def __connected__(self):
+        pass
+
+    def disconnected(self, peerid):
+        if peerid == self.peerid:
+            self.valid = False
+        self.connector.removeObserver(self.oid)
+        self.connector = None
+
+    def __del__(self):
+        self.connector.close(peerid = self.peerid)
+
+
+class RPCConnectorProxy(ConnectorProxyBase):
+    def __connected__(self):
+        self.deferred = self.connector.call("__listing",
+                                            peerid = self.peerid,
+                                            callback = self.__build__)
+
+    def __build__(self, description):
         self.deferred = None
         fcts = {}
         cls = type("RPCConnectorProxy_%s" %str(self.peerid), (object,), dict(built = True))
@@ -91,6 +118,10 @@ class RPCConnectorProxy(object):
             setattr(cls, fct, new.instancemethod(fct_proxy, None, cls))
 
         self.__class__ = cls
+        self.valid = True
+        if self.callback != None:
+            self.callback(self)
+
 
 
 class RPCConnector(connector.Connector):
@@ -215,33 +246,10 @@ def remote_callable(fct):
 class VariableConnector(RPCConnector):
     def __init__(self):
         RPCConnector.__init__(self)
-        self.__remote_variables__ = {}
-        self.__local_variables__ = {}
+        self.__local_variables      = {}
+        self.__list_results         = {}
+
         self.bind(self);
-        self.__list_results__ = {}
-
-    def start(self, *args, **kw):
-        RPCConnector.start(self, *args, **kw)
-
-    def connected(self, proto, rpeerid):
-        RPCConnector.connected(self, proto, rpeerid)
-        res = self.send("get_variable_list", result = True)
-        self.__list_results__[rpeerid] = res
-
-        res.addObserver(self.__received_variable_list__, rpeerid)
-
-    def __received_variable_list__(self, varlist, rpeerid):
-        proxydict = {}
-        for v in varlist:
-            proxydict[v] = variable.VariableProxy(v, rpeerid, self)
-        self.__remote_variables__[rpeerid] = proxydict
-        del self.__list_results__[rpeerid]
-
-    def disconnected(self, proto, rpeerid):
-        RPCConnector.disconnected(self, proto, rpeerid)
-        if rpeerid in self.__remote_variables__:
-            del self.__remote_variables__[rpeerid]
-
 
     @remote_callable
     def set_variable_value(self, variable, value):
@@ -258,61 +266,14 @@ class VariableConnector(RPCConnector):
         return self.__local_variables__.keys()
 
 
+class VariableConnectorProxy(ConnectorProxyBase):
+    def __connected__(self):
+        self.deferred = self.connector.call("get_variable_list",
+                                            peerid = self.peerid,
+                                            callback = self.__build__)
 
-class VariableManager(object):
-    def __init__(self):
-        self.__local_variables__ = {}
+    def __build__(self, variables):
+        print(variables)
 
-    @remote_callable
-    def set_variable_value(self, variable, value):
-        var = self.__local_variables__[variable]
-        var.value = value
-        return var.value
-
-    @remote_callable
-    def get_variable_value(self, variable):
-        return self.__local_variables__[variable].value
-
-    @remote_callable
-    def get_variable_list(self):
-        return self.__local_variables__.keys()
-
-
-
-
-class test(object):
-    @remote_callable
-    def method1(self, *args):
-        print (args)
-
-class ObjectProxy(object):
-    def bind(self, connector):
-        self.connector = connector
-        self.__remote_callable__ = {}
-
-    def connected(self, *args):
-        print ("Connected")
-
-    def disconnected(self, *args):
-        print ("DisConnected")
-
-    def received(self, *args):
-        print ("euh")
-
-    def call(self, method, *args):
-        self.connector.send(method, *args, id = 1)
-
-if __name__ == '__main__':
-    import variable
-    c = RPCConnector()
-    vm = VariableManager()
-    v = variable.Variable(c, 2)
-    vm.__local_variables__['test'] = v
-    c.bind(vm)
-    c.start()
-    print (c.tcp)
-    import reactor
-    reactor.Reactor().run()
-    c.close()
 
 

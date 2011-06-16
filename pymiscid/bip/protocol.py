@@ -137,14 +137,17 @@ class BIPProtocol(threading.Thread):
 
         factory.connectedTCP(self)
 
-        transport_list = [self.transportTCP, self.transportUDP]
         while not self.__stop_evt__:
+            transport_list = (self.transportTCP,) if self.transportUDP is None else (self.transportTCP, self.transportUDP)
+
             try:
                 select_list = select.select(transport_list, [], [], 3)[0]
             except (select.error):
                 break
 
             try:
+
+
                 for transport in select_list:
                     recv_msg = self.__recv_msg_dgram if transport == self.transportUDP else self.__recv_msg
                     peerid, msgid, size, msg = recv_msg(transport)
@@ -424,7 +427,8 @@ class BIPFactory(object):
                     proto.transportUDP.connect((addr, udpport))
                     enabled = "Enabled"
                 except (Exception):
-                    print "EXCEPTION"
+                    proto.transportUDP.close();
+                    proto.transportUDP = None
 
             if logger.isEnabledFor(logging.INFO):
                 logger.info("UDP %s on [%s]" % (enabled, str(peerid)))
