@@ -22,7 +22,9 @@ class ConnectorBase(protocol.BIPFactory):
 
     __tcp       = None
     description = "It's a trap"
-    structure   = "raw"
+    structure   = "RAW"
+    ctype       = "RAW"
+    name        = "X"
 
     def __get_peerid(self):
         return self.__peerid
@@ -45,6 +47,7 @@ class ConnectorBase(protocol.BIPFactory):
         Basic hash of a connector
         """
         return self.peerid
+
 
     def send(self, msg, peerid = None, udp = False):
         """
@@ -91,9 +94,15 @@ class ConnectorBase(protocol.BIPFactory):
         stcp                = reactor.Reactor().listenTCP(tcpport, self)
         addr, self.__tcp    = stcp.getsockname()
 
-
-        #sudp = reactor.listenUDP(0, self)
-        #addr, self.udp = sudp.getsockname()
+    def build_description(self):
+        desc = dict(name        = self.name,
+                    peerid      = int(self.peerid),
+                    description = self.description,
+                    attributes  = [],
+                    structure   = self.structure,
+                    tcp         = self.tcp,
+                    type        = self.ctype)
+        return desc
 
 
     def __get_tcp_port(self):
@@ -114,6 +123,7 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
     def __init__(self, *args, **kw):
         ConnectorBase.__init__(self, *args, **kw)
         events.EventDispatcherBase.__init__(self)
+        self.__peer_events__ = {}
 
     def connected(self, proto, rpeerid):
         """
@@ -121,8 +131,9 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
 
         :param proto: The actual protocol object where the event occured
         """
+        self.__peer_events__[rpeerid] = events.Event()
         ConnectorBase.connected(self, proto, rpeerid)
-        self.connectedEvent(rpeerid)
+        self.connectedEvent(rpeerid, self.__peer_events__[rpeerid], proto.description)
 
     def disconnected(self, proto, rpeerid):
         """
@@ -131,6 +142,7 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
 
         :param proto: The actual protocol object where the event occured
         """
+        del self.__peer_events__[rpeerid]
         ConnectorBase.disconnected(self, proto, rpeerid)
         self.disconnectedEvent(rpeerid)
 
@@ -144,6 +156,7 @@ class Connector(ConnectorBase, events.EventDispatcherBase):
         """
         ConnectorBase.received(self, proto, peerid, msgid, msg)
         if msgid != 0:
+            self.__peer_events__[peerid](msg)
             self.receivedEvent(msg)
 
 

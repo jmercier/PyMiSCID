@@ -51,8 +51,8 @@ class DeferredCallback(object):
 
 
 class StructuredConnector(connector.Connector):
-    def send(self, structured_msg):
-        connector.Connector.send(json.dumps(structured_msg))
+    def send(self, structured_msg, *args, **kw):
+        connector.Connector.send(json.dumps(structured_msg, *args, **kw))
 
     def received(self, proto, peerid, msgid, msg):
         """
@@ -70,81 +70,26 @@ class StructuredConnector(connector.Connector):
         self.receivedEvent(jsondict)
 
 
-
-class ConnectorProxyBase(object):
-    valid = False
-    def __init__(self, connector, cdescription, callback = None):
-        self.connector  = connector
-        self.valid      = False
-        self.oid        = self.connector.addObserver(self)
-        self.connector.connect(cdescription)
-        self.peerid     = cdescription.peerid
-        self.callback   = callback
-
-    def connected(self, peerid):
-        if self.peerid == peerid:
-            self.__connected__()
-
-    def __connected__(self):
-        pass
-
-    def disconnected(self, peerid):
-        if peerid == self.peerid:
-            self.valid = False
-        self.connector.removeObserver(self.oid)
-        self.connector = None
-
-    def __del__(self):
-        self.connector.close(peerid = self.peerid)
-
-
-class RPCConnectorProxy(ConnectorProxyBase):
-    def __connected__(self):
-        self.deferred = self.connector.call("__listing",
-                                            peerid = self.peerid,
-                                            callback = self.__build__)
-
-    def __build__(self, description):
-        self.deferred = None
-        fcts = {}
-        cls = type("RPCConnectorProxy_%s" %str(self.peerid), (object,), dict(built = True))
-        for fct in description:
-            def fct_proxy(self, *args, **kw):
-                if "callback" not in kw:
-                    self.connector.send(fct, args = args)
-                else:
-                    return self.connector.call(fct, args = args, callback = kw['callback'])
-            fct_proxy.__name__ = str(fct)
-            setattr(cls, fct, new.instancemethod(fct_proxy, None, cls))
-
-        self.__class__ = cls
-        self.valid = True
-        if self.callback != None:
-            self.callback(self)
-
-
+class TheConnector(connector.Connector):
+    def send(self, structured_message, **kw):
+        connector.Connector
 
 class RPCConnector(connector.Connector):
     events          = ['connected', 'disconnected']
-    structure       = "JSON RPC"
+    structure       = "JSON"
+    ctype           = "RPC"
     __rpcid__       = id_generator()
     def __init__(self, *args, **kw):
         connector.Connector.__init__(self, *args, **kw)
 
         self.__rcallables__ = {}
-        self.__bounded__ = []
         self.__pending_results__ = {}
-
-        self.register("__listing", self.__listing)
-
 
 
     def register(self, name, method):
         wmethod = wref.WeakBoundMethod(method) if isinstance(method, new.instancemethod) else weakref.ref(method)
         self.__rcallables__[name] = wmethod
 
-    def __deferred_deleted__(self, deferred):
-        pass
 
     def received(self, proto, peerid, msgid, msg):
         """
@@ -162,17 +107,6 @@ class RPCConnector(connector.Connector):
             self.__process_rpc__(jsondict['method'], jsondict['params'],
                                     jsondict['id'], peerid)
 
-    def bind(self, obj):
-        """
-        """
-        for name in dir(obj):
-            attr = getattr(obj, name)
-            if callable(attr) and hasattr(attr, "__remote_callable__"):
-                self.register(name, attr)
-
-        self.__bounded__.append(obj)
-        self.addObserver(obj)
-
     def __process_rpc__(self, method, params, cid, peerid):
         resultdict = {"error" : None, "result" : None, "id" : cid}
         try:
@@ -180,14 +114,16 @@ class RPCConnector(connector.Connector):
             if fct is None:
                 del self.__rcallables__[method]
             else:
-                resultdict['result'] = self.__rcallables__[method]()(*params)
+                resultdict['result'] = fct(*params)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             resultdict['error'] = [e.__class__.__name__, str(e)]
 
         if cid != None:
             connector.ConnectorBase.send(self, json.dumps(resultdict), peerid = peerid)
 
-    def __listing(self):
+    def __listing__(self):
         """
         """
         return self.__rcallables__.keys()
@@ -227,16 +163,14 @@ class RPCConnector(connector.Connector):
                                   "params" : args,
                                   "id" : rpcid})
 
-        result = DeferredCallback(rpcid, self, callback, ())
+        result = None
+        if callback is not None:
+            result = DeferredCallback(rpcid, self, callback, ())
+            self.__pending_results__[rpcid] = weakref.ref(result)
 
-        self.__pending_results__[rpcid] = weakref.ref(result)
         connector.ConnectorBase.send(self, msg, peerid = peerid)
 
         return result
-
-
-
-
 
 
 def remote_callable(fct):
@@ -246,34 +180,29 @@ def remote_callable(fct):
 class VariableConnector(RPCConnector):
     def __init__(self):
         RPCConnector.__init__(self)
-        self.__local_variables      = {}
-        self.__list_results         = {}
+        self.variables      = {}
 
-        self.bind(self);
+        self.register("set_variable_value", self.set_variable_value)
+        self.register("get_variable_value", self.get_variable_value)
 
-    @remote_callable
+    def add_variable(self, vname, v):
+        v.addObserver(self.variable_changed, vname)
+        self.variables[vname] = v
+
+    def variable_changed(self, value, vname):
+        self.send("variable_changed", (vname, value))
+
     def set_variable_value(self, variable, value):
-        var = self.__local_variables__[variable]
+        var = self.__local_variables[variable]
         var.value = value
         return var.value
 
-    @remote_callable
     def get_variable_value(self, variable):
-        return self.__local_variables__[variable].value
-
-    @remote_callable
-    def get_variable_list(self):
-        return self.__local_variables__.keys()
+        return self.__local_variables[variable].value
 
 
-class VariableConnectorProxy(ConnectorProxyBase):
-    def __connected__(self):
-        self.deferred = self.connector.call("get_variable_list",
-                                            peerid = self.peerid,
-                                            callback = self.__build__)
 
-    def __build__(self, variables):
-        print(variables)
+
 
 
 

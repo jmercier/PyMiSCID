@@ -10,6 +10,7 @@ import socket
 import math
 import reactor
 import select
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,9 @@ class BIPFactory(object):
         self.__unknown_peers    = []
         self.lock               = threading.Lock()
 
+    def build_description(self):
+        return {}
+
     def build(self, tcpsock, addr):
         """
         (Main Thread)
@@ -317,7 +321,10 @@ class BIPFactory(object):
 
         # Greeting Message
         udpaddr, udpport = proto.transportUDP.getsockname()
-        proto.send(str(udpport), self.peerid)
+
+        description = self.build_description()
+        description['udp'] = udpport
+        proto.send(json.dumps(description), self.peerid)
         proto.start()
         return proto
 
@@ -418,20 +425,18 @@ class BIPFactory(object):
         :param msg: The actual message
         """
         if peerid not in self.peers:
+            proto.description = json.loads(msg)
             self.connected(proto, peerid)
-            enabled = "Disabled"
-            if msgid == 0: # SHOULD ALWAY BE
-                try:
-                    udpport = int(msg)
-                    addr, tcpport = proto.getPeerInfo()
-                    proto.transportUDP.connect((addr, udpport))
-                    enabled = "Enabled"
-                except (Exception):
-                    proto.transportUDP.close();
-                    proto.transportUDP = None
+            if "udp" not in proto.description:
+                proto.transportUDP.close();
+                proto.transportUDP = None
+            else:
+                addr, tcpport = proto.getPeerInfo()
+                proto.transportUDP.connect((addr, proto.description['udp']))
 
             if logger.isEnabledFor(logging.INFO):
-                logger.info("UDP %s on [%s]" % (enabled, str(peerid)))
+                logger.info("UDP %s on [%s]" % ("enable" if 'udp' in proto.description else "disabled",
+                                                str(peerid)))
 
 
 

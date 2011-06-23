@@ -22,8 +22,7 @@ import description
 import bip.protocol as protocol
 import codebench.events as events
 import socket
-
-from codebench.decorators import singleton
+import variable
 
 
 from standard import UNBOUNDED_PEERID, \
@@ -41,6 +40,9 @@ connector.Connector.txt_description     = IO_CONNECTOR_PREFIX
 connector.IConnector.txt_description    = INPUT_CONNECTOR_PREFIX
 connector.OConnector.txt_description    = OUTPUT_CONNECTOR_PREFIX
 
+# -----------------------------------------------------------------------------
+# Mixin Section
+# -----------------------------------------------------------------------------
 class ConnectorMixin(object):
     name = "UnNamed"
     def TXTRecord(self, record = None):
@@ -62,9 +64,41 @@ class ConnectorMixin(object):
                     structure = self.structure,
                     tcp = self.tcp)
 
+    def get_proxy(self, description):
+        raise Exception("UnImplemented")
 
-connector.Connector.__bases__ += (ConnectorMixin,)
+class RPCConnectorMixin(ConnectorMixin):
+    def StructuredDescription(self):
+        d = ConnectorMixin.StructuredDescription(self)
+        d.update(dict(methods = self.__listing__()))
+        return d
 
+
+class VariableMixin(object):
+    def StructuredDescription(self):
+        return dict(name        = self.name,
+                    description = self.description,
+                    value       = self.value)
+
+
+class VariableConnectorMixin(RPCConnectorMixin):
+    def StructuredDescription(self):
+        d = RPCConnectorMixin.StructuredDescription(self)
+        vdict = {}
+        d.update(dict(variables = [v.StructuredDescription() for v in self.variables.itervalues()]))
+        return d
+
+
+
+connector.Connector.__bases__   += (ConnectorMixin,)
+rpc.RPCConnector.__bases__      += (RPCConnectorMixin,)
+rpc.VariableConnector.__bases__ += (VariableConnectorMixin,)
+variable.Variable.__bases__     += (VariableMixin,)
+
+
+# -----------------------------------------------------------------------------
+# Omiscid Service Section
+# -----------------------------------------------------------------------------
 class Service(object):
     """
     """
@@ -80,8 +114,13 @@ class Service(object):
             if issubclass(attr, connector.ConnectorBase):
                 setattr(self, attrname, attr())
 
-        self.consts = {"name" : self.name}
+            if issubclass(attr, variable.Variable):
+                setattr(self, attrname, attr())
 
+            if isinstance(attr, variable.Variable):
+                attr.addObserver(self.variable_changed)
+
+        self.consts = {"name" : self.name}
 
 
     def __init_control(self):
@@ -89,11 +128,12 @@ class Service(object):
         """
         peerid_gen  = connector.protocol.PeerIDIterator()
 
-        self.control            = rpc.RPCConnector()
+        self.control            = rpc.VariableConnector()
         self.control.name       = self.name
         self.control.peerid     = peerid_gen.next()
 
-        self.control.bind(self)
+        self.control.register('get_description', self.get_description)
+        self.control.register('get_peers', self.get_peers)
 
         return peerid_gen
 
@@ -112,7 +152,11 @@ class Service(object):
                    "description" : "%s/%s" % (CONSTANT_PREFIX, self.description)}
 
         self.connectors     = {}
+        self.variables      = {}
         self.publisher      = bonjour.BonjourServicePublisher()
+
+
+        peerid_gen  = self.__init_control()
 
         # Populating Connector Attribute from introspection
         for attrname in dir(self):
@@ -120,7 +164,10 @@ class Service(object):
             if isinstance(attr, connector.ConnectorBase):
                 self.connectors[attrname] = attr
 
-        peerid_gen  = self.__init_control()
+            if isinstance(attr, variable.Variable):
+                self.variables[attrname] = attr
+                self.control.add_variable(attrname, attr)
+                attr.name = attrname
 
         for cname, peerid in zip(self.connectors, peerid_gen):
             c           = self.connectors[cname]
@@ -132,7 +179,8 @@ class Service(object):
 
         # Publishing our service through DNS-SD
         domain = OMISCID_DOMAIN if subdomain is None else "_bip_%s._tcp" % subdomain
-        self.publisher.publish(str(self.control.peerid), self.control.tcp, domain, txt = record)
+        self.publisher.publish(str(self.control.peerid),
+                               self.control.tcp, domain, txt = record)
 
         return True
 
@@ -157,21 +205,37 @@ class Service(object):
     def __del__(self):
         self.stop()
 
-    @rpc.remote_callable
     def get_description(self):
+        """
+        This RPC Function returns the a very exaustive description of the
+        service in a structured Nested Dictionary Fashion.
+        """
         c = [c.StructuredDescription() for c in self.connectors.itervalues()]
         return dict(connectors = c,
+                    variables = [],
                     description = self.description,
                     name = self.name,
                     control = self.control.StructuredDescription(),
                     user = pwd.getpwuid(os.getuid())[0],
                     host = socket.gethostname())
 
-    @rpc.remote_callable
     def get_peers(self):
-        return [int(k) for k in self.control.peers.keys()]
+        """
+        This Method returns all peers connected to all the underlying connectors
+        """
+        result = {}
+        for c in self.connectors:
+            result[c] = [int(k) for k in self.connectors[c].peers.keys()]
+        result['control'] = [int(k) for k in self.control.peers.keys()]
+
+        self.connectors = {}
+
+        return result
 
 
+# -----------------------------------------------------------------------------
+# Omiscid ServiceRepository Section
+# -----------------------------------------------------------------------------
 class ServiceRepository(events.EventDispatcherBase):
     events = ['added', 'removed']
 
@@ -188,6 +252,9 @@ class ServiceRepository(events.EventDispatcherBase):
         self.bsd.start()
 
     def addObserver(self, observer, *args):
+        """
+        Adding OMiSCID Repository observer for event callback
+        """
         events.EventDispatcherBase.addObserver(self, observer, *args)
         with self.lock:
             for p in self.descriptions:
@@ -195,9 +262,15 @@ class ServiceRepository(events.EventDispatcherBase):
 
 
     def added(self, peerid, host, addr, port, desc):
+        """
+        Method Callback from the DNSSD ServiceRepository
+        """
         self.connector.connect((addr, port))
 
     def removed(self, peerid):
+        """
+        Method Callback from the DNSSD ServiceRepository
+        """
         pid = protocol.PeerID(peerid)
         if pid in self.descriptions:
             with self.lock:
@@ -208,14 +281,21 @@ class ServiceRepository(events.EventDispatcherBase):
 
             self.removedEvent(p)
 
-    def connected(self, peerid):
+    def connected(self, peerid, evt, description):
+        """
+        Method Callback When our protocol are connected
+        """
         with self.lock:
             callback = rpc.MethodCallback(self.__serviceResolved, peerid)
-
-            deferred = self.connector.call("get_description", callback = callback, peerid = peerid)
+            deferred = self.connector.call("get_description",
+                                           callback = callback,
+                                           peerid = peerid)
             self.deferreds[peerid] = deferred
 
     def __serviceResolved(self, answer, peerid):
+        """
+        Method Callback For the get_description RPC Call
+        """
         with self.lock:
             addr, port = self.connector.getPeerInfo(peerid)
 
@@ -238,12 +318,18 @@ class ServiceRepository(events.EventDispatcherBase):
         self.addedEvent(p)
 
     def disconnected(self, peerid):
+        """
+        Method Callback for our protocol. If we got premature disconnection
+        before receiving the description from the other end of the protocol
+        """
         if peerid in self.deferreds:
             with self.lock:
                 del self.deferreds[peerid]
 
 
     def __del__(self):
+        """
+        """
         self.stop_event = True
 
 
@@ -254,10 +340,12 @@ if __name__ == '__main__':
     import logging.config
     logging.getLogger().setLevel(logging.DEBUG)
 
+
     services = []
     for i in range(1):
         class S(Service):
             name = 'Yeah_%d' % i
+            v1 = variable.Variable("EUH", "DESCRIPTION")
         for j in range(1):
             setattr(S, "c_%d" % j, connector.Connector)
 
@@ -265,8 +353,16 @@ if __name__ == '__main__':
 
     [s.start() for s in services]
 
+    i = 0
+    def vchanged():
+        v = services[0].v1
+        global i
+        v.value = i
+        i += 1
+        return i < 10
 
     import reactor
+    reactor.Reactor().callLater(vchanged, 1)
     reactor.Reactor().run()
 
     [s.stop() for s in services]
