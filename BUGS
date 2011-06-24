@@ -1,2 +1,0 @@
-THIS IS WHERE WE KEEP TRACK KNOWN BUGS
-    -> when there is many services in the environment and filter demand for a variable value, it can hang the main receiving thread
