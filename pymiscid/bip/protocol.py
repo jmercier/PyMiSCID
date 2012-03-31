@@ -92,8 +92,13 @@ class MessageBuilder(object):
 
         data, rest = data[:self.rlen], data[self.rlen:]
         datalen = len(data)
+
+	#print "rlen=%d, datalen=%d" %(self.rlen,datalen)
+
         if datalen == 2:
             pass
+	elif self.rlen == datalen:
+            self.buffer[-(self.rlen - 2):] = data[:-2]
         elif (self.rlen - 2) <= datalen:
             self.buffer[-(self.rlen - 2):] = data
         else:
